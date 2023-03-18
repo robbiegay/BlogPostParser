@@ -1,0 +1,13 @@
+title:Blog Title
+
+This is a paragraph.
+
+This is a paragraph.
+
+
+This is a paragraph.
+
+image:path/image.img
+
+gallery:path/image1.jpg;path/image2.img
+
