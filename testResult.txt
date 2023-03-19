@@ -14,21 +14,21 @@
 
 <div className="text-center">
 	<figure className="figure" style={{ maxWidth:"50%", margin:"auto" }}>
-		<img className="img-fluid" src="path/image.img" alt="" />
-	</ figure>
-</ div>
+		<img className="img-fluid" src="path/image.img" alt="description of image" />
+	</figure>
+</div>
 
 <Carousel>
 	<Carousel.Item>
-	    <img className="d-block w-100" src="path/image1.jpg" alt="" />
+	    <img className="d-block w-100" src="path/image1.jpg" alt="alt description" />
 	    <Carousel.Caption>
-	        <p className="d-inline-flex px-2 mb-4 bg-dark rounded"></p>
+	        <p className="d-inline-flex px-2 mb-4 bg-dark rounded">title caption</p>
 	    </Carousel.Caption>
 	</Carousel.Item>
 	<Carousel.Item>
 	    <img className="d-block w-100" src="path/image2.img" alt="" />
 	    <Carousel.Caption>
-	        <p className="d-inline-flex px-2 mb-4 bg-dark rounded"></p>
+	        <p className="d-inline-flex px-2 mb-4 bg-dark rounded">title caption two</p>
 	    </Carousel.Caption>
 	</Carousel.Item>
 

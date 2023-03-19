@@ -7,7 +7,7 @@ This is a paragraph.
 
 This is a paragraph.
 
-image:path/image.img
+image:path/image.img~alt text for image*a caption for the image
 
-gallery:path/image1.jpg;path/image2.img
+gallery:path/image1.jpg~alt description*title caption;path/image2.img*title caption two;
 
