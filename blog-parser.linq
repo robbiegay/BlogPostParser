@@ -58,7 +58,7 @@ private string GetFileName()
 {
 	Console.WriteLine("Enter the name of your blog file:");
 	var fileName = Console.ReadLine();
-	fileName = @"StartingToBlogAgain.txt"; // FOR TESTING
+	fileName = @"YIR2020.txt"; // FOR TESTING
 	Console.WriteLine($"\toutput path: {fileName}");
 
 	return fileName;
@@ -108,12 +108,17 @@ private string ParseImage(string input)
 		}
 	}
 
-	return    "<div className=\"text-center\">"
-				+ "\n\t<figure className=\"figure\" style={{ maxWidth:\"50%\", margin:\"auto\" }}>"
-					+ $"\n\t\t<img className=\"img-fluid\" src=\"{url}\" alt=\"{alt}\" />"
-					+ $"\n\t\t<figcaption className=\"figure-caption text-center\">{description}</ figcaption>\""
-				+ "\n\t</figure>"
-			+ "\n</div>";
+	return  
+		"<br>\n\n"
+		
+	    + "<div className=\"text-center\">"
+			+ "\n\t<figure className=\"figure\" <!--style={{ maxWidth:\"50%\", margin:\"auto\" }}-->>"
+				+ $"\n\t\t<img className=\"img-fluid\" src=\"{url}\" alt=\"{alt}\" />"
+				+ $"\n\t\t<figcaption className=\"figure-caption text-center\">{description}</ figcaption>"
+			+ "\n\t</figure>"
+		+ "\n</div>"
+			
+		+ "\n\n</br>";
 }
 
 private enum ItemType
@@ -183,10 +188,12 @@ private string ParseGallery(string input)
 		}
 	}
 
-	output += "<Carousel>\n";
+	output += "<br>\n\n" + "<Carousel>\n";
 
-	foreach (var galleryItem in galleryItems)
+	for (var i = 0; i < galleryItems.Count; i++)
 	{
+		var galleryItem = galleryItems[i];
+		
 		output +=
 $"""
 	<Carousel.Item>
@@ -196,10 +203,11 @@ $"""
 	    </Carousel.Caption>
 	</Carousel.Item>
 """;
-		output += "\n";
+		if (i < galleryItems.Count - 1)
+			output += "\n";
 	}
 
-	output += "\n</Carousel>";
+	output += "\n</Carousel>" + "\n\n</br>";
 	
 	return output;
 }
