@@ -6,32 +6,50 @@ void Main()
 	Console.WriteLine("Set 'isOrdered' to 'true' for ordered lists.\n");
 	
 	var isOrdered = false;
-	
-	var input = Console.ReadLine();
-	var result = "";
-	
-	if (isOrdered)
-		result += "<ol><li>";
-	else
-		result += "<ul><li>";
-	
-	foreach (var c in input)
+
+	while (true)
 	{
-		if (c == '~')
+		Console.WriteLine($"\n\nIsOrdered: {isOrdered}");
+		
+		var input = Console.ReadLine();
+		//Console.Clear();
+
+		if (input == "set:t")
 		{
-			result += "</li><li>";
+			isOrdered = true;
+			continue;
 		}
+		else if (input == "set:f")
+		{
+			isOrdered = false;
+			continue;
+		}
+		
+		var result = "";
+
+		if (isOrdered)
+			result += "<ol><li>";
 		else
-			result += c;
+			result += "<ul><li>";
+
+		foreach (var c in input)
+		{
+			if (c == '~')
+			{
+				result += "</li><li>";
+			}
+			else
+				result += c;
+		}
+
+		if (isOrdered)
+			result += "</li></ol>";
+		else
+			result += "</li></ul>";
+
+		Console.WriteLine("\n---------------------------------------------------\n");
+
+		result.Dump();
 	}
-
-	if (isOrdered)
-		result += "</li></ol>";
-	else
-		result += "</li></ul>";
-
-	Console.WriteLine("\n---------------------------------------------------\n");
-
-	result.Dump();
 }
 

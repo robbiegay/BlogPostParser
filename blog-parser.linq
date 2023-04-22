@@ -120,16 +120,16 @@ private string ParseImage(string input)
 	}
 
 	return  
-		"<br>\n\n"
+		"<br />\n\n"
 		
 	    + "<div className=\"text-center\">"
-			+ "\n\t<figure className=\"figure\" <!--style={{ maxWidth:\"50%\", margin:\"auto\" }}-->>"
-				+ $"\n\t\t<img className=\"img-fluid\" src=\"{url}\" alt=\"{alt}\" />"
+			+ "\n\t<figure className=\"figure\">"
+				+ $"\n\t\t<img className=\"img-fluid\" src=\"/blogAssets/img/2023/{url}\" alt=\"{alt}\" />"
 				+ $"\n\t\t<figcaption className=\"figure-caption text-center\">{description}</ figcaption>"
 			+ "\n\t</figure>"
 		+ "\n</div>"
 			
-		+ "\n\n</br>";
+		+ "\n\n<br />";
 }
 
 private enum ItemType
@@ -208,7 +208,7 @@ private string ParseGallery(string input)
 		output +=
 $"""
 	<Carousel.Item>
-	    <img className="d-block w-100" src="{galleryItem.Url}" alt="{galleryItem.Alt}" />
+	    <img className="d-block w-100" src=/"/blogAssets/img/2023/"{galleryItem.Url}" alt="{galleryItem.Alt}" />
 	    <Carousel.Caption>
 	        <p className="d-inline-flex px-2 mb-4 bg-dark rounded">{galleryItem.Description}</p>
 	    </Carousel.Caption>
