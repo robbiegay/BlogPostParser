@@ -26,9 +26,20 @@ void Main()
 		{
 			output += ParseGallery(line[8..]);
 		}
+		else if (line.Length >= 5 && line[0..5] == "line:")
+		{
+			output += $"\n<br />\n<hr />\n<br />\n";
+		}
+		else if (line.Length >= 8 && line[0..7] == "rating:")
+		{
+			output += ParseRating(line[7..]);
+		}
 		else
 		{
-			output += $"<p>\n\t{line}\n</p>";
+			if (string.IsNullOrWhiteSpace(line))
+				output += "<br />";
+			else
+				output += $"<p>\n\t{line}\n</p>";
 		}
 		
 		output += "\n\n"; // Visual spacing
@@ -44,7 +55,7 @@ private string GetFilePath()
 {
 	Console.WriteLine("Enter an input file path (without file name):");
 	var filePath = Console.ReadLine();
-	filePath = @"C:\Users\rgay\Documents\LINQPad Queries\personal\BlogPosts"; // FOR TESTING
+	filePath = @"C:\Users\rgay\Documents\LINQPad Queries\personal\BlogPosts\"; // FOR TESTING
 
 	if (filePath[filePath.Length - 1] != '\\')
 		filePath += "\\";
@@ -58,7 +69,7 @@ private string GetFileName()
 {
 	Console.WriteLine("Enter the name of your blog file:");
 	var fileName = Console.ReadLine();
-	fileName = @"YIR2020.txt"; // FOR TESTING
+	fileName = @"DDIA.txt"; // FOR TESTING
 	Console.WriteLine($"\toutput path: {fileName}");
 
 	return fileName;
@@ -212,6 +223,30 @@ $"""
 	return output;
 }
 
+private string ParseRating(string rating)
+{
+	var output = "";
+	
+	int parsedRating;
+	int.TryParse(rating, out parsedRating);
+	
+	output += "<p>\n\t<b><u>Rating</u></b>:\n</p>\n";
+	
+	output += "\n<p>\n\t";
+	
+	for (int i = 0; i < 5; i++)
+	{
+		if (parsedRating-- > 0)
+			output += "&#11088; ";
+		else
+			output += "&#9733; ";
+	}
+	
+	output += "\n</p>";
+	
+	return output;
+}
+
 private void PrintProtocol()
 {
 	Console.WriteLine("Blog Parser:");
@@ -219,6 +254,8 @@ private void PrintProtocol()
 	Console.WriteLine("To add a title \n\t-> title:Example Title");
 	Console.WriteLine("To add an image (~ = alt text) \n\t-> image:path-url/image.jpg~alt text");
 	Console.WriteLine("To add an image gallery (must end each item with ';', ~ = alt text, * = description) \n\t-> gallery:path-url/image1.jpg~alt text*description;path-url/image2.jpg;");
+	Console.WriteLine("To add a rating (max of 5) for a book review\n\t-> rating:4 (4/5 stars)");
+	Console.WriteLine("To add a line break \n\t-> line:");
 	Console.WriteLine("To add a paragraph \n\t-> Just write some text and seperate it like a normal paragraph!");
 	Console.WriteLine("");
 }
