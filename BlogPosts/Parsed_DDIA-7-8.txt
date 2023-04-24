@@ -1,0 +1,659 @@
+<h3 className="text-center">Chapter 7: Transactions</h3>
+
+<br />
+
+<p>
+	In data systems, many things can go wrong:
+</p>
+
+<p>
+	<ul><li>Database software or hardware can fail at any time (including in the middle of a write operation)</li><li>The application may crash at anytime (including halfway through a series of operations)</li><li>Interruptions in the network can unexpectedly cut the application off from the database or one database node from another.</li><li>Several clients may write to the database at the same time, overwriting each other’s changes</li><li>A client may read data that doesn’t make any sense because it has only been partially updated.</li><li>Race conditions between clients can cause surprising bugs.</li></ul>
+</p>
+
+<p>
+	In order to be reliable, a system has to deal with these faults and ensure that they don’t cause a catastrophic failure.
+</p>
+
+<p>
+	For decades, <b>transactions</b> have been the mechanism of choice for simplifying these issues. A transaction is a way to group several reads and writes into a logic unit. Either the entire operation succeeds (<b>commit</b>) or fails (<b>abort rollback</b>) and can be retried again safely. There are no partial failures. By using transactions, the application is free to ignore certain error scenarios (these are called <b>safety guarantees</b>). 
+</p>
+
+<p>
+	Not every application needs transactions and sometimes there are reasons to abandon them completely such as higher performance or availability, or if an application is simple enough to not need the added complexity.
+</p>
+
+<br />
+
+<p>
+	The safety guarantees provided by transactions are said the be <b>ACID</b>:
+</p>
+
+<p>
+	<ul><li><b>Atomicity</b>: Atomic refers to something that cannot be broken down further. This means that a transaction cannot be broken down – it cannot partially complete or partially fail. It either works fully (commit) or fails completely (abort).</li><li><b>Consistency</b>: Consistency means that you have certain statements about your data that must always be true (invariants). For example: in accounting systems, credits and debits must always be balanced. Consistency is more a property of the application than the database. Joe Hellerstein remarked that “C” was tossed in to make the acronym work.</li><li><b>Isolation</b>: Isolation means that concurrently executing transactions are isolated from each other – they cannot step on each other’s toes.</li><li><b>Durability</b>: Durability means that once a transaction has been committed, any data written will not be forgotten. In a distributed database, this means that the data must be replicated to a certain number of nodes before being deemed successful. Perfect durability is not possible – there is always a chance that all of your nodes will be destroyed at once. There are only risk-reduction techniques.</li></ul>
+</p>
+
+<p>
+	ACID databases are based on the philosophy: if the database is in danger of violating its guarantee of atomicity, isolation or durability, it would rather abandon the transaction entirely that allow it to remain half finished.
+</p>
+
+<p>
+	In some ways, “ACID compliant” has become more of a marketing term. Systems that are not ACID are sometimes referred to as <b>BASE</b>: <b>B<b/>asically <b>A<b/>vailable, <b>S</b>oft state, and <b>E</b>ventual consistency.
+</p>
+
+<p>
+	Although retrying failed transactions is simple and effective, it can cause problems:
+</p>
+
+<p>
+	<ul><li>If the transaction actually succeeded but the network failed when the server tried to acknowledge the successful commit to the client, the client will think it failed and will try to run the transaction again resulting in duplicated transactions.</li><li>If the error is due to overload, retrying will make things worse.</li><li>It is only worth retrying on transient errors as a permeant error will continue to fail each time.</li><li>If the transaction has side effects outside of the database, those side effects may happen even if the transaction is aborted. Example: you wouldn’t want to send an email each time you try to run the transaction to update the mailbox count.</li><li>If the client process fails while retrying, the data it is trying to write will be lost.</li></ul>
+</p>
+
+<br />
+
+<p>
+	<b>Weak Isolation Levels</b>
+</p>
+
+<p>
+	If two transactions don’t touch the same data, they can be safely run in parallel. Concurrency issues (race conditions) only come into play when one transaction reads data that is concurrently modified by another transaction or when two transactions try to modify the same data at the same time.
+</p>
+
+<p>
+	Concurrency bugs are hard to find by testing as they are only triggered when you get very unlucky with timing. Such timing issues might occur very rarely and can be difficult to reproduce.
+</p>
+
+<p>
+	<b>Serializable isolation</b> means that the database guarantees that transactions have the same effect as if they were run serially (one after the other). Serializable isolation has a performance cost and many databases don’t want to pay this price. It is common for systems to use weaker levels of isolation that protect against some but not all concurrency issues.
+</p>
+
+<p>
+	The most basic level of transaction isolation is <b>read committed</b> which makes two guarantees:
+</p>
+
+<p>
+	<ol><li>When reading from the database, you will only see data that has been committed (no dirty reads)</li><li>When writing to the database, you will only overwrite data that has been committed (no dirty writes)</li></ol>
+</p>
+
+<br />
+
+<div className="text-center">
+	<figure className="figure">
+		<img className="img-fluid" src="/blogAssets/img/2023/dirty-reads.png" alt="Dirty reads" />
+		<figcaption className="figure-caption text-center"></ figcaption>
+	</figure>
+</div>
+
+<br />
+
+<p>
+	Read committed prevent dirty writes. In the above image, User 2 will continue to get x = 2 until the transaction from User 1 is committed.
+</p>
+
+<br />
+
+<div className="text-center">
+	<figure className="figure">
+		<img className="img-fluid" src="/blogAssets/img/2023/dirty-writes.png" alt="Dirty writes" />
+		<figcaption className="figure-caption text-center"></ figcaption>
+	</figure>
+</div>
+
+<br />
+
+<p>
+	The above image shows how a dirty write can occur: the same Listing and Invoice objects are written to at the same time with unexpected results.
+</p>
+
+<br />
+
+<p>
+	Read committed is a very popular isolation level. A common implementation is for the database to prevent dirty reads by using row-level locks: when a transaction wants to modify a particular object (row or document) it acquires a lock on that object. It must hold the lock until the transaction is completed or aborted. This approach does not work well in practice as a long running write can force many other transactions to wait, even if they are read only and not attempting to do any writing. A better approach is for the database to remember the old value for any locked object, and to return the old value until the lock is released.
+</p>
+
+<p>
+	<b>Read skew</b> is when you read data being updated while a transaction is running. For example, one transaction updates two objects and you read the database when one object has updated and the other has not. This creates a <b>nonrepeatable read</b>: reading the database again will produce a different (and likely more accurate) result. 
+</p>
+
+<p>
+	Read skew is considered acceptable in read committed isolation – in most cases, the user will be okay with reloading the page and seeing the correct result.
+</p>
+
+<p>
+	There are a few instances where read skew can cause a problem:
+</p>
+
+<p>
+	<ul><li><b>Backups</b>: Backups over large datasets may take several hours, during which time writes will continue to be made. This could cause the backup to contain read skew and restoring from the backup will make those inconstancies permanent.</li><li><b>Analytical queries and integrity checks</b>: Large queries that scan over the database will return nonsensical results if they observe parts of the database at different points in time.</li></ul>
+</p>
+
+<p>
+	Snapshot isolation is the most common solution to this problem as this provides backups and analytical queries with a consistent snapshot of the database.
+</p>
+
+<p>
+	Implementing snapshot isolation involves requiring locks for writes but not reads. This leads to a key principle of snapshot isolation: <b>readers never block writers, and writers never block readers</b>. The database will keep several committed versions of the objects, known as multi-version concurrency control (MVCC).
+</p>
+
+<br />
+
+<div className="text-center">
+	<figure className="figure">
+		<img className="img-fluid" src="/blogAssets/img/2023/snapshot-iso.png" alt="Snapshot isolation" />
+		<figcaption className="figure-caption text-center"></ figcaption>
+	</figure>
+</div>
+
+<br />
+
+<p>
+	<b>Lost Updates</b>
+</p>
+
+<p>
+	When two transactions write concurrently, this can cause one write to override the other one (sometimes known as <b>clobbering</b>). Writes typically follow a <b>read-modify-write cycle</b>.
+</p>
+
+<p>
+	There are serval solutions to this problem: atomic write (operations taking an exclusive lock on every read), explicit locking in application code if database atomic reads are not available, automatically detect lost updates and abort the transaction.
+</p>
+
+<p>
+	Distributed database replications make lost writes more challenging as the conflicting writes may be occurring in different datacenters. A common solution is to allow all conflicting writes to survive (known as <b>siblings</b>) and to use application code to resolve these conflicts.
+</p>
+
+<br />
+
+<p>
+	<b>Write Skew and Phantoms</b>
+</p>
+
+<p>
+	Write skew occurs when application code checks multiple objects before making a decision, and then updates one of the objects. While updating one object, the other object gets updated and makes the previous precondition no longer true. One of the best solution is to add a serializable isolation guarantee, as this causes the updates to act as if they were executed one after another. Another, less optimal solution is to use <b>materializing conflicts</b> – you add additional information to lock multiple objects when an update needs to occur.
+</p>
+
+<br />
+
+<p>
+	<b>Serializability</b>
+</p>
+
+<p>
+	Serializability is regarded as the strongest level of isolation. Most database provide serializability through one of three methods:
+</p>
+
+<p>
+	<ol><li><b>Executing in serial order</b>. Executing in serial order was not an option for many years, but as RAM has become cheap and OLTP transactions short, running as a single thread can be feasible. If you can make transactions very fast, and the transaction throughput is low enough to execute on a single core, then this can be an effective and simple solution.</li><li><b>Two-phase locking (2PL)</b>: In 2PL, multiple transactions can read an object but if a write is attempted, a lock is acquired. The write must wait for the read to finish, then the write is processed. All reads must wait for the write to finish. Readers do not block each other but a write must wait for reads to finish, write, and then release its lock. 2PL is called two phase locking because all objects in the database have a lock that can either be in shared or exclusive more. If two objects get stuck waiting for each other (<b>deadlock</b>), the database will detect this situation and abort one of the transactions.</li><li><b>Serializable snapshot isolation (SSI)</b>: 2PL does not perform well and Serial Execution does not scale well. Weak isolation levels perform well but are prone to various race conditions. SSI is very promising and relatively new (2008) algorithm. It provides full serializability with only a small performance penalty. 2PL is a <b>pessimistic</b> concurrency control mechanism – things could go wrong so it always acts like they will and protects against them every time. SSI is an <b>optimistic</b> concurrency control mechanism, allowing transactions to proceed unblocked until it is time to commit at which time they are checked for concurrency issues and aborted if issues are found. In most cases, cases where there are not issues, this lack of locking allows for a performance increase.</li></ol>
+</p>
+
+<br />
+
+<p>
+	Summary of race condition issues:
+</p>
+
+<p>
+	<ul><li><b>Dirty reads</b>: One client reads another client's writes before they have been committed.</li><li><b>Dirty writes</b>: One client overwrites another client's writes before they have been committed. Almost all transaction implementations prevent dirty writes.</li><li><b>Read skew</b>: A client sees different parts of the database at different points in time. Snapshot isolation: a client reads the database at a particular point in time.</li><li><b>Lost updates</b>: Two clients concurrently perform a read-modify-write cycle. One overwrites the other's write without incorporating changes.</li><li><b>Write skew</b>: A client reads information and makes a write based on that info. By the time its write completes, the read info is no longer true. Only serializable isolation prevents this.</li><li><b>Phantom reads</b>: A transaction reads objects that match a search condition. Another client makes a write that affects the result of the search.</li></ul>
+</p>
+
+<p>
+	Only serializable isolation protects against all race conditions.
+</p>
+
+<br />
+
+<p>
+	This chapter explored transactions in the context of a database running on a single machine, distributed databases and transactions are next.
+</p>
+
+
+<br />
+<hr />
+<br />
+
+
+<h3 className="text-center">Chapter 8: The Trouble with Distributed Systems</h3>
+
+<br />
+
+<p>
+	A lot of things can go wrong in distributed systems. Our task as engineers is to build systems that do their jobs in spite of everything going wrong.
+</p>
+
+<br />
+
+<p>
+	Buggy software can give the appearance that a computer is “having a bad day” but this is almost always the result of software not hardware issues. If a hardware issue occurs (memory corruption, loose connector), the results is usually a <b>total system failure</b>. This is a deliberate choice – a computer is designed to work correctly or not at all – total failure is better than an incorrect result. This is called <b>always-correct computation</b>.
+</p>
+
+<p>
+	Software running on a single machine should be <b>deterministic</b> – it should return the same result each time.
+</p>
+
+<p>
+	In a distributed system, some components could be broken while others may be working fine. These <b>partial failures</b> can cause nondeterministic results. Partial failures and nondeterminism is what makes distributed systems hard to work with.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b>Cloud Computing and Super Computing</b>
+</p>
+
+<p>
+	There is a spectrum of philosophies of how to build large-scale computing systems:
+</p>
+
+<p>
+	<ul><li><b>High-performance computing (HPC)</b>: Supercomputers with thousands of CPUs typically used for computationally intense scientific tasks such as weather forecasting or molecular dynamics.</li><li><b>Cloud computing</b>: Not very well defined but usually associated with multi-tenet data centers, commodity computers connected over IP networks (Ethernet), elastic/on-demand resource allocation, and metered billing.</li><li>Traditional enterprise data centers lie somewhere in the middle.</li></ul>
+</p>
+
+<p>
+	Supercomputers will typically save a snapshot of their work to storage from time to time. If a component fails, the entire system will crash. The component can then be replaced and computation resumes from the last checkpoint. Due to this, supercomputers often behave similarly to single machines.
+</p>
+
+<p>
+	Many distributed systems are online – and have users that expect low latency, always-on response times. Taking the entire system down for repairs is not an option. 
+</p>
+
+<p>
+	Supercomputers are built from specialized, reliable hardware. Distributed computing relies on cheap, commodity machines. The bigger a distributed system gets, the more likely it is that among its thousands of nodes, at least one thing is broken and being repairs at all times. If a system can tolerate failed nodes and still keep working as a whole, this can be very useful for operation and maintenance: You can perform a rolling upgrade, restarting one node at a time while the others continue to function. In distributed systems, you must build a reliable system out of unreliable components.
+</p>
+
+<p>
+	Shared nothing systems are the dominant way of building distributed data systems because they don't require specialized hardware and instead can use commodity computing machines.
+</p>
+
+<p>
+	The internet and most networks in datacenters (often ethernet) are <b>asynchronous packet networks</b>, meaning that one node can send a message to another node but the network gives no guarantees when it will arrive or if it will arrive at all. If you send a request to a node and don’t receive a reply, it is impossible to known why.
+</p>
+
+<p>
+	<ul><li>The request may have been lost (perhaps someone unplugged a network cable).</li><li>Your request may be waiting in a queue (perhaps the network or recipient is overloaded).</li><li>The remote node may have crashed.</li><li>The remote node may have stopped responding (perhaps due to a long running garbage collection) but may start responding later.</li><li>The remote node may have processed your request but the response got lost.</li><li>The remote node may have processed your request but the response has been delayed and will be delivered later.</li></ul>
+</p>
+
+<p>
+	The usual way of handling these issues is with a <b>timeout</b>. Timeouts still do not tell you if the remote node get your request or not.
+</p>
+
+<br />
+
+<p>
+	<b>Network Faults</b>
+</p>
+
+<p>
+	Network problems can be surprisingly common, even in controlled environments like a data center. Even redundant hardware doesn’t guard against human error, which is a major cause of outages. Wild things can happen to the network ranging from bad network config changes to sharks biting undersea internet cables.
+</p>
+
+<p>
+	Handling network faults doesn't always mean tolerating them – sometimes showing the user an error screen and forcing them to wait for the network to come back online is acceptable. It may make sense to deliberately trigger network problems and test the systems response. This is the idea behind chaos monkey.
+</p>
+
+<p>
+	From the Wikipedia article on <a href="https://en.wikipedia.org/wiki/Chaos_engineering">chaos engineering</a>:
+</p>
+
+<p>
+	<quote>While overseeing Netflix's migration to the cloud in 2011 Nora Jones, Casey Rosenthal, and Greg Orzell expanded the discipline while working together at Netflix by setting up a tool that would cause breakdowns in their production environment, the environment used by Netflix customers. The intent was to move from a development model that assumed no breakdowns to a model where breakdowns were considered to be inevitable, driving developers to consider built-in resilience to be an obligation rather than an option<quote>
+</p>
+
+<br />
+
+<p>
+	<b>Detecting Faults</b>
+</p>
+
+<p>
+	Many systems need to detect faulty nodes:
+</p>
+
+<p>
+	<ul><li>A load balancer needs to stop sending requests to a node that is dead.</li><li>In distributed databases with single-leader replication, if the leader fails, one of the followers must be promoted to be the new leader.</li></ul>
+</p>
+
+<p>
+	Rapid feedback that a node is down is useful (sometimes you can get these from the machine the node was running on), but you can’t count on it. If you want to be sure that a request was successful, you need a positive response from the application itself.
+</p>
+
+<br />
+
+<p>
+	<b>Timeouts and Unbounded Delays</b>
+</p>
+
+<p>
+	How long should the timeout be? Too long and you cause users to wait for the timeout to elapse. Too short and you may prematurely declare nodes dead that are only delayed. The latter is problematic because the node that timed out but was still alive may process the request. Meanwhile, the application assumes that it is dead and sends the request to a new node, resulting in the request being processed twice.
+</p>
+
+<p>
+	Most networks have unbounded delays – they will try to deliver a packet as quickly as possible, but there is no upper limit on how long this could take.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b>TCP vs UDP</b>
+</p>
+
+<p>
+	Some latency-sensitive application such as videoconferencing and Voice over IP (VoIP) use <b>UDP (User Datagram Protocol)</b> rather than <b>TCP (Transmission Control Protocol)</b>. This is a tradeoff between reliability and variability of delays: UDP does not retransmit lost packets so it does not suffer as much from delays. This is at the expense of lost data. UDP is a good choice in situations where delayed data is worthless. On voice and video calls, there likely isn’t enough time to retransmit the data before it is due to be transmitted over the speaker. Instead, the missing data is just dropped, causing the call to drop for a second or the video to lag. The retry layer is instead transferred to the human: “Could you repeat that please? The sound just cut out for a moment.”
+</p>
+
+<br />
+
+<p>
+	On a public cloud or multi-tenet datacenter, you have no control or insight into how much load other users are putting on the shared network. A <b>noisy neighbor</b> could use a lot of resources, causing performance to degrade for you. Due to this, you may want to continually measure the difference in delays (<b>jitter</b>) and automatically adjust timeouts.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b>Synchronous vs Asynchronous Networks</b>
+</p>
+
+<p>
+	Fixed-line telephone networks (non-cellular, non-VoIP) are extremely reliable. When a call is made, the network establishes a <b>circuit</b>: a fixed guaranteed amount of bandwidth allocated for the call. This is because the data requirements are known: a certain amount of bandwidth is needed for audio and audio is transmitted for the entire length of the call.
+</p>
+
+<p>
+	Internet traffic is not like this. It is <b>bursty</b>, having varying data sizes. TCP dynamically adapts the rate of data transfer to the available network capacity.
+</p>
+
+<p>
+	Another way to look at this: Since the amount of data needed for a call in known, you can known the maximum bandwidth of a wire – for example: 10,000 calls. The wire is divided up statically with each call receiving the same amount of bandwidth.
+</p>
+
+<p>
+	By contrast, the internet shares bandwidth dynamically. Senders push and jostle each other over to wire as quickly as possible and the network switch's decide which packets to send. This approach has the downside of queueing but the advantage of maximum utilization of the wire.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b>Unreliable Clocks</b>
+</p>
+
+<p>
+	We can measure durations (How long did the user spend on the site? Has the request timed out? What is the 99th percentile response time of the service?) and points in time (When was the article published? When does the cache entry expire? What is the timestamp on the log message?). In distributed systems, time is a tricky subject. This is because the communication from A to B travels over an unreliable and unbounded network. In addition, each machine has its own clock that are not perfectly accurate, so each machine has its own notion of time. 
+</p>
+
+<p>
+	It is possible to synchronize clocks to some degree. The most common mechanism is <b>Network Time Protocol (NTP)</b> which allows the computer clock to be adjusted according to the time reported by a group of servers. The servers in turn get their time from a more accurate device such as a GPS receiver.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b>Monotonic vs Time-of-Day Clocks</b>
+</p>
+
+<p>
+	Time-of-day clocks report the date and time (also known as <b>wall-clock time</b>). Time-of-day clocks are often synchronized to NTP. Time-of-day clocks can have various oddities such as: if they fall to far out of sync with NTP, they are forcibly set forward or back in time. These jumps make time-of-day clock unsuitable for measuring elapsed time. Historically, time-of-day clocks have coarse grained resolution, moving forward in steps of 10ms on older windows computers. Recent systems have less of an issue with time resolution.
+</p>
+
+<br />
+
+<p>
+	<b>Monotonic</b> clocks are guaranteed to always move forwards. Their actual value is meaningless - it may be the number of nanoseconds since the computer was restarted. It makes no sense to compare the monotonic time between two computers. Monotonic clocks have good resolution and can typically measure time in microseconds.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b>Clock Synchronization and Accuracy</b>
+</p>
+
+<p>
+	<ul><li>The quartz crystal used in computer clocks is not very accurate: it <b>drifts</b> (runs faster or slower) depending on machine temperature. Google assumes a clock drift of 6ms for machines that are resynced via NTP every 30 seconds and 17 seconds for machines that resynced once per day.</li><li>NTP can only be as accurate as the network delay. In one study, this was a maximum of 35ms.</li><li>NPT servers can sometimes be wrong. There is robustness – NPT clients query several servers and ignore outliers but it is still a little scary to get your time from a stranger on the internet.</li><li>Leap seconds (minutes with 59 or 61 seconds) can crash systems. The best way to handle this is to make the NTP servers “lie” and spread the leap second out over the course of a day (known as <b>smearing</b>).</li><li>In virtual machines, the hardware clock is virtualized. When a CPU core is shared between multiple VMs, each VM is paused for tens of milliseconds while another VM is running. From the application’s point of view, this manifests itself as the clock suddenly jumping forward.</li><li>If you run software on devices you don’t control (i.e. mobile or embedded devices) you probably cannot trust the hardware clock at all. Some users deliberately set their clock to an incorrect time – for example to circumvent timing limitations on games.</li></ul>
+</p>
+
+<p>
+	It is possible to achieve very good clock accuracy if you are willing to invest significant resources. For example, MiDID II European regulation for financial institutions requires that high-frequency trading funds synchronize their clocks to within 100 microseconds of UTC, in order to help debug market anomalies such as “<a href="https://en.wikipedia.org/wiki/Flash_crash">flash crashes</a>” and to help detect market manipulation. Such accuracy can be achieved via GPS receivers, the <b>Precision Time Protocol (PTP)</b>, and careful deployment and monitoring. It requires significant expense and expertise.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b>Relying on Synchronized Clocks</b>
+</p>
+
+<p>
+	If you use software the relies on synchronized clocks, it is essential that you carefully monitor offsets between all machines and declare a node dead if it drifts too far in clock time from the other nodes.
+</p>
+
+<p>
+	You may use timestamps to determine the ordering of events. In the following image, the skew between node 1 and 3 is less than 3ms (probably better than you can expect in practice) and yet the ordering of events is wrong. This can cause unexpected situations such as: database writes mysteriously disappearing (a node with a lagging clock is unable to overwrite values previously written by a node with a faster clock because it always looks like its values are coming in <b>before</b> the fast clock node), LWW cannot distinguish writes that occurred sequentially in fast succession.
+</p>
+
+<br />
+
+<div className="text-center">
+	<figure className="figure">
+		<img className="img-fluid" src="/blogAssets/img/2023/timing-issues.png" alt="Timing issues" />
+		<figcaption className="figure-caption text-center"></ figcaption>
+	</figure>
+</div>
+
+<br />
+
+<p>
+	Clocks can have a confidence interval, which may look something like: we are 95% confidant that it is 10.3 and 10.5 seconds past the minute. Google’s TrueTime API explicitly reports the confidence interval on the local clock, giving you an earliest and latest possible time that it could currently be. You can calculate an uncertainty bound by combining: quartz drift since last sync with NTP server + NPT server’s uncertainty + network round trip time to the server.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b>Process Pauses</b>
+</p>
+
+<p>
+	<b>Garbage Collection</b> stops all running threads known as a <b>"stop-the-world” pause</b>. Garbage Collection can be known to last for up to several minutes!
+</p>
+
+<p>
+	VMs can be <b>suspended</b> (pausing all processes and saving state to disk) and resumed at a later time. This can be for an indefinite period of time, and is sometimes used to migrate the VM to a new host. This can happen at any point during your application execution.
+</p>
+
+<p>
+	On end-user devices, execution may also be paused when the user closes the laptop.
+</p>
+
+<br />
+
+<p>
+	Some software runs in an environment where a failure to respond within a specific time cam cause serious damage: rockets, robots, cars. These are called <b>hard real-time</b> systems. A <b>real-time operating system (RTOS)</b> allow processes to be scheduled with guaranteed CPU time. Libraries must document their worst-case execution times. Garbage collection must be tightly controlled or not used at all.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b>Knowledge, Truth, and Lies</b>
+</p>
+
+<p>
+	So far in chapter 8, we have looked at how distributed systems differ from programs running on a single computer: there is no shared memory, messages pass through an unreliable network with variable delays. Systems may suffer from partial failures, unreliable clocks, and processing pauses. Because of this, a node can never know anything for sure – it can only make guesses based on the messages it receives (or doesn't receive). It can only get information from other nodes by exchanging messages with them and if the other node does not respond, it cannot know if it is a network or a node issue.
+</p>
+
+<br />
+
+<p>
+	<b>The Truth is defined by the majority</b>
+</p>
+
+<p>
+	A node cannot trust its own judgement of a situation. For example: it may be receiving messages and processing them, but all of its responses are being lost. It thinks it is operating correctly while the rest of the system thinks it is in a failed state. To solve this, distributed algorithms rely on a <b>quorum</b> – a minimum number of voting nodes that reduces the dependency on a single node. Most commonly, the quorum is an absolute majority of more than half the nodes. This prevents conflicting quorum votes (cannot have multiple greater-than-half majorities).
+</p>
+
+<br />
+
+<p>
+	<b>Fencing</b>
+</p>
+
+<br />
+
+<div className="text-center">
+	<figure className="figure">
+		<img className="img-fluid" src="/blogAssets/img/2023/fencing.png" alt="Fencing" />
+		<figcaption className="figure-caption text-center"></ figcaption>
+	</figure>
+</div>
+
+<br />
+
+<br />
+
+<p>
+	<b>Fencing</b> tokens are used to make locks safe in a distributed system. Without a fencing token in the above image, when client 1 resumes after GC, it thinks it still has a valid lock and would attempt to write to the Storage database, creating a duplicate write. With the ever increasing fencing token, an older write cannot be performed. The lock service serves a lock with an ever increasing fencing token and writes with lower tokens are not accepted.
+</p>
+
+<br />
+
+<p>
+	<b>Byzantine Faults</b>
+</p>
+
+<p>
+	In this book, we assume that nodes are <b>unreliable but honest</b>. I.e. that a node would not deliberately send writes with fake fencing tokens. Distributed systems become harder if there is a risk that nodes “lie” (send arbitrary faulty or corrupted messages). <b>Byzantine faults</b> are where nodes behavior is no longer honest and they send corrupted data or intentionally lie (possibly lying at a human request). Examples include:
+</p>
+
+<p>
+	<ul><li>In aerospace, data in memory or CPU can be corrupted by radiation. Flight control systems must be byzantine fault tolerant.</li><li>In a system with multiple participants, some organizations may attempt to cheat or defraud others. In such situations, it may not be safe to trust messages from other nodes as they may have been sent with malicious intent. An example is peer-to-peer blockchain technology as a way to get mutually untrusting parties to agree on transaction states.</li></ul>
+</p>
+
+<p>
+	Most byzantine fault systems require a supermajority of more than 2/3rds for a quorum. Although full byzantine fault tolerance is expensive and likely not practical for must systems, there are still some safeguards you can implement:
+</p>
+
+<p>
+	<ul><li>Checksums for corrupted network packets at the application level (though these are usually caught by TCP and UDP).</li><li>Sanitizing input from users of a publicly accessible application.</li></ul>
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b>System Model and Reality</b>
+</p>
+
+<p>
+	A <b>system model</b> is an abstraction that describes what things an algorithm may assume.
+</p>
+
+<p>
+	Timing assumptions:
+</p>
+
+<p>
+	<ul><li><b>Synchronous Model</b>: Assumes bounded network delay, bounded process pauses, and bounded clock error. This does not mean that these timing issues do not occur, just that there is an upward limit on how long they are. This is not a realistic model for most systems.</li><li><b>Partially Synchronous Model</b>: Behaves like a synchronous model most of the time but occasionally violates the upper bound. This is realistic for must systems as it assumes that things usually work, but is prepared for when they don’t.</li><li><b>Asynchronous  Model</b>: An algorithm is not allowed to make timing assumptions and does not even have a clock. This is a very restrictive model.</li></ul>
+</p>
+
+<br />
+
+<p>
+	Node failure models:
+</p>
+
+<p>
+	<ul><li><b>Crash-stop faults</b>: Assumes a node can only fail one way, by crashing. A node that crashes never comes back.</li><li><b>Crash-recovery faults</b>: Nodes may fail at any time and possibly recover later. Nodes are assumed to have stable storage and volatile memory that is lost on crash. This is a commonly used model.</li><li><b>Byzantine (arbitrary) faults</b>: Nodes may do absolutely anything, including trying to trick and deceive other nodes.</li></ul>
+</p>
+
+<p>
+	Most distributed systems use the partially synchronous and crash-recovery models.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b>Correctness of an algorithm</b>
+</p>
+
+<p>
+	To describe what it means for an algorithm to be <b>correct</b>, we must describe its <b>properties</b>. An algorithm is correct in some system model if it always satisfies the properties in all situations than may occur in that system model.
+</p>
+
+<p>
+	<ul><li><b>Safety and Liveness</b>: <b>Liveness</b> properties often include the word “eventually” (eventual consistency is one). <b>Safety</b> is “<b>nothing bad happens</b>”, liveness is “<b>something good eventually happens</b>”. Safety properties must never be violated while liveness properties can have caveats like: only require a response if a majority of the nodes eventually recover or if the network comes back online.</li></ul>
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b>Chapter Summary</b>
+</p>
+
+<p>
+	A wide range of problems can occur in distributed systems:
+</p>
+
+<p>
+	<ul><li>When you try to send a packet over the network, it may be lost or arbitrarily delayed. Likewise, the response may be lost or delayed. So if you don’t get a reply, you don’t know if the message went through.</li><li>A node’s clock may be significantly out of sync with other nodes (despite your best efforts to set up NTP). It may suddenly jump forward or backward in time.</li><li>A processor may pause for a significant amount of time (perhaps due to a stop-the-world garbage collection), be declared dead by other nodes, and then come back to life with no idea that it was paused.</li></ul>
+</p>
+
+<p>
+	The fact that such partial failures can occur is the defining characteristic of distributed systems. Whenever software tries to do anything involving other nodes, there is a chance that it may occasionally fail, randomly go slow, or not respond at all.
+</p>
+
+<p>
+	To tolerate faults, the first step is to detect them, but even that is hard. Most systems rely on failures, but these cannot detect between network and node failures and variable network delays can sometimes cause a node to be falsely suspected of crashing. Moreover, sometimes a node can be in a degraded state. Such a node that is “<b>limping</b>” but not dead can be even more difficult to deal with.
+</p>
+
+<p>
+	Once a fault is detected, getting the system to tolerate it is not easy either. There are no global variables, no shared memory, no common knowledge among the machines. Nodes cannot even agree what time it is, let alone anything more significant. The only way nodes can communicate is over an unreliable network. Major decisions cannot be made by one node, so we must use protocols to enlist help from other nodes and try to get a quorum.
+</p>
+
+<p>
+	If you can solve problems on a single machine, do it. Distributed computing is hard and you can do a lot on a single machine these days. However, scalability, fault tolerance, and low latency (data close to users around the world) cannot be solved on a single machine.
+</p>
+
+<p>
+	Tangent on time: Is the unreliable nature or networks, clocks, and processes inevitable? No, it is possible to give hard real-time response guarantees and bounded delays in networks, but doing so is very expensive and results in lower hardware utilization. Most non-safety-critical systems choose cheap and unreliable over expensive and reliable.
+</p>
+
+<p>
+	Super computers: Supercomputers assume reliable components and must be stopped and restarted when a component fails. By contrast, distributed systems can run forever without being interrupted at the service level, because all faults and maintenance can be handled at the node level. In practice, however, a bad configuration change rolled out to all nodes could bring the entire system down.
+</p>
+
+<br />
+
+<p>
+	This chapter was all about problems, the next will focus on solutions :)
+</p>
+
+
+<br />
+<hr />
+<br />
+
+
+<br />
+
+<br />
+
+<br />
+
+<br />
+

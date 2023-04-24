@@ -1,0 +1,384 @@
+title:Chapter 9: Consistency and Consensus
+ 
+
+In previous chapters, we discussed how a lot of things can go wrong in a distributed system. If a system encounters a failure and cannot simply fail and display an error message, then we must make the system fault-tolerant. The best way of introducing fault tolerance is to find general-purpose abstractions with useful guarantees and implement them once, letting the application depend on those guarantees. We used this approach with reads and writes to the database, making them fault tolerant by using transactions. We now want to find a way to make similar guarantees for distributes datasets. We want to seek abstractions that make it so that our application can safely ignore many of the problems that come with distributed systems.
+
+ 
+
+ 
+
+<b>Consistency Guarantees</b>
+
+If you look at two replicas of a database at the same time, you are likely to see different data, as the nodes are receiving different writes at different times (both from clients and update writes from other nodes). With <b>eventual consistency</b> (which could also be called <b>convergence</b>), if we stopped all writes, after an undefined amount of time, all data replicas would become the same. This provides only a very weak guarantee. You could write a value, and immediately try to read it only to get a different value as your read request had been routed to a yet-to-update node. This can be very confusing to application developers who want to treat database calls like variable: there is an expectation from single-threaded applications that a variable can read and write values in a logical manner. In this chapter, we will develop strong consistency guarantees, but at a cost: these systems may perform worse or be less fault-tolerant. We will explore the following:
+
+<ul><li><b>Linearizability</b>: One of the strongest consistency models.</li><li><b>Ordering guarantees</b>: Ordering events in a distributed system, particularly causality and total ordering.</li><li><b>Atomic commits</b>: Atomic commits in a distributed system and solutions to the problem of consensus.</li></ul>
+
+ 
+
+ 
+
+<b>Linearizability</b>
+
+With linearizability (aka atomic consistency, strong consistency, immediate consistency, or external consistency), you make the system appear as if there were only one copy of the data. Once a client completes a write, all clients must be able to read the value just written. Linearizability is a <b>recency guarantee</b>.
+
+When reads occur during a write, for the duration of the write, it is unknown if the read will return the old or new value. In a linearizable system, once <b>one</b> read has returned the new value, <b>all</b> reads after that must also return the new value.
+
+Linearizable and serializable can sound similar: serializable has to do with transactions on objects in a database – it makes them appear as if they had occurred sequentially and prevents things like write skew. Linearizable is a recency guarantee on objects in a register. A database that provides both can be said to have: <b>strict serializability</b> or <b>strong one-copy serializability</b>. 
+
+Linearizability can be required in situations such as: nodes picking a leader – one way to do this is to have every node attempt to acquire a lock, the one that succeeds is the leader. Another is uniqueness constraints in a database – such as only one user can register the same username.
+
+ 
+
+Some methods that do and don’t work for implementing linearizability:
+
+list:<b>Single copy</b>: A single copy of the data is the simplest way to implement linearizability. If you can get by without replicated data, do it.~<b>Single Leader Replication</b>: Can be linearizable but has some issues:*Bugs such as split brain.~By design: snapshot isolation allows each transaction to work on its own snapshot of the database, which can cause write skew, stale reads, and lack of total order.*<b>Consensus Algorithms</b>: Consensus algorithms can implement linearizability.~<b>Multi-leader Replication</b>: As multiple leaders each accept their own writes, and resolve them later, multi-leader is pretty much the opposite of linearizable.~<b>Leaderless Replication</b>: Some people claim that leaderless databases can be made linearizable via quorum writes but clock skew on last write wins conflict resolution violates total ordering and sloppy quorums are certainly not linearizable.
+
+ 
+
+ 
+
+Since linearizability requires that all databases be synchronized, if a network interruption separates nodes from each other, a choice must be made between <b>linearizability</b> and <b>availability</b>: to maintain linearizability, the system will have to wait for the network fault to be resolved. If using single-leader replication, the non-leader cannot make any writes and it cannot make any linearizable reads because it has lost the guarantee that those reads are up to date with the leader. Conversely, the system could abandon linearizability and use multi-leader replication which would allow both data centers to continue to operate and to sync up later.
+
+ 
+
+Linearizability is a useful guarantee but surprisingly few systems use it. Even RAM on a modern, multi-core machine is not linearizable: Every CPU has its own memory cache and store buffer. It first checks its cache before going to a register. This means that data can be stored in the cache and register, and that the values may be different at different times.
+
+ 
+
+ 
+
+<b>Ordering Guarantees</b>
+
+Ordering is important because it helps preserve <b>causality</b>. Examples of causality: question followed by answer, cause followed by effect, row created before being updated, a message being sent before it is received, i.e. one thing leads to another. If a system obeys the ordering imposed by causality, it is said to be <b>causally consistent</b>.
+
+ 
+
+<b>Total order</b> is different than causality. Total order means that two elements can be compared. Natural numbers have total order: you can say that 5 is less than 7. Mathematical sets do not have total order: you cannot say that { a , b } is less than { b, c } as one is a subset of the other and they are incomparable – though they can be partially ordered if one set contains a full subset of the other.
+
+ 
+
+Linearizability gives total order because the dataset behaves as if there is only a single copy, and therefore, we can always tell if one thing comes before another. Causality only gives us partial order as some events have a <b>happens-before</b> relationship while others are <b>incomparable</b> (they occurred concurrently).
+
+ 
+
+Linearizability is a stronger form of consistency as any system that is linearizable is also casually consistent. That said, linearizable systems take a performance hit. Casual consistency is the strongest possible consistency model that does not slow down due to network delays and remains available in the presence of network failures. Many systems that think they require linearizability could really use causal consistency instead.
+
+ 
+
+Sequence numbers or timestamps are one way to create total order. Timestamps do not have to be time-of-day timestamps as those can be unreliable. Instead, a logical clock can be used, which might be as simple as a number that increments on each operation.
+
+ 
+
+With multi-leader replication, sequence numbers become more problematic. You cannot have different leader nodes generating the same timestamps. Way to address this:
+
+list:One node could generate only even timestamps and another only odd.~You could switch to using time-of-day timestamps with a high enough resolution.~You could allocate blocks of timestamps to different nodes. 
+
+These methods do not protect causality: the odd timestamps could fall behind the even; time-of-day clocks could become skewed.
+
+ 
+
+ 
+
+<b>Lamport timestamps</b> solve this issue by using a pair of values: a counter and a node id. Each node keeps track of the greatest counter that it has seen so far and, when it receives requests from other nodes, if their counter is even higher, it jumps its counter to that value. Timestamps are compared first via counter and second via node id.
+
+ 
+
+Timestamps do not solve concurrency issues where decisions need to be made immediately. For example, if there is a uniqueness constraint on usernames, timestamps could resolve which username was created last, but in reality you need to prevent that second username from being created at all. Timestamps can only be used after the uniqueness constraint has already been violated.
+
+ 
+
+ 
+
+list:^<b>Total order broadcast</b> is what is really needed for database replication. It requires two safety properties:
+
+Reliable delivery: No messages are lost. If a message is delivered to one node, it must be delivered to all nodes.~Totally ordered delivery: Messages are delivered to all nodes in the same order.
+
+ 
+
+ 
+
+<b>Distributed Transactions and Consensus</b>
+
+Consensus is one of the most important and fundamental problems in distributed computing. Getting all the nodes to agree on something is required in situations such as: leader election and atomic commit (all nodes must commit or rollback).
+
+ 
+
+<b>Two-phase commit (2PC)</b> is a way to create atomic commits across multiple nodes. A <b>coordinator</b> (also known as a transaction manager) is used – often implemented in the same library within the application process requesting the transaction. 
+
+ 
+
+list:^In phase 1, the coordinator sends a <b>prepare</b> message to all nodes (<b>participants</b>), asking them if they are ready to commit:
+
+If all respond “yes”, the coordinator sends out a <b>commit</b> request in phase 2.~If any of the participants respond “no”, the coordinator sends out an <b>abort</b> request in phase 2.
+
+ 
+
+In phase 1, each node does all the work to ensure that it can commit no matter what (including a crash, power failure, or running out of memory). This means that whatever crash recover mechanism is in place (such as a WAL) has already prepared the transaction. By voting “yes”, the participant has passed the first point-of-no-return: it must now be prepared to commit <b>no matter what</b> if it receives a commit message in phase 2. 
+
+The second point-of-no-return is when the coordinator sends out its <b>commit</b> or <b>abort</b> message. Once it has written that decision to disk, it must attempt to send commit/abort messages to all nodes. If it receives a timeout from any node, it must retry indefinitely – there is no going back.
+
+ 
+
+Once a node votes “yes” it cannot commit or abort until it hears from the coordinator in phase 2. If the coordinator where to crash, the node is now stuck. This is called being <b>in doubt</b> or <b>uncertain</b>. This means that the coordinator is a single-node atomic commit that can block all other nodes from proceeding on a given transaction. For this reason, 2PC is sometimes called a <b>blocking atomic commit</b>.
+
+ 
+
+A <b>three-phase commit (3PC)</b> is <b>nonblocking</b> and has been proposed but assumes bounded network delays and bounded node response times. In addition, it requires a <b>perfect failure detector</b> – a reliable way to tell if a node has crashed or not. Because this is not possible on an internet with unbounded delays, 2PCs continue to be used. 
+
+ 
+
+If the coordinator is not replicated and runs on a single node, it becomes a single point of failure for distributed atomic transactions. There are ways around such as:
+
+list:Having administrators manually resolve orphaned transactions (transactions that are stuck “in doubt” because of coordinator failure).~Creating a heuristic for resolving orphaned transactions – though this likely breaks atomicity.
+
+ 
+
+ 
+
+ 
+
+<b>Chapter 9 Summary</b>:
+
+<b>Linearizability</b>: A popular consistency model with the goal of making replicated data appear as though it were only a single copy, and to make all operations act on it atomically. Linearizability is appealing because it is easy to understand (it makes the database behave like a variable in a single-threaded program). It has the downside of being slow, especially in environments with large network delays.
+
+<b>Causality</b>: Imposes ordering on events in a system (what happened before what, based on cause and effect). Unlike linearizability, which puts all operations in a single, ordered timeline, causality provides a weaker consistency model: some things can be concurrent and some things have happened-before relationships. The version history is like a timeline with branching and merging. Casual consistency does not have the coordination overhead of linearizability and is much less sensitive to network delays.
+
+Causal ordering (for example, with <a href="https://en.wikipedia.org/wiki/Lamport_timestamp">Lamport timestamps</a>) is sometimes not enough. If a process that cannot be duplicated (such as registering a new username) occurs concurrently with another process writing the same value, that system needs to ensure that one process does not succeed. This leads to <b>consensus</b>. Consensus is getting all of the nodes to agree on what was decided. This can solve several problems:
+
+list:<b>Linearizable compare-and-set registers</b>: The register needs to automatically decide whether to sets its value, based on whether its current value equals the parameter of a given operation.~<b>Atomic transaction commit</b>: A database must decide to commit or abort a distributed transaction.~<b>Total order broadcast</b>: The messaging system must decide on the order in which to deliver messages.~<b>Locks and leases</b>: When several clients are racing to grab a lock or a lease, the lock decides which one successfully acquired it.~<b>Membership/coordination service</b>: Given a failure detector (e.g. timeouts), the system must decide which nodes are alive, and which should be considered dead.~<b>Uniqueness constraint</b>: When several transactions try to concurrently create conflicting records with the same key, the constraint must decide which to allow and which to fail.
+
+All of these are straightforward if you have a single node or assign decision making to a single node. This can result in blockages if that leader node fails. There are several options when the leader fails:
+
+list:Wait for it to recover – if it does not, the system could be blocked indefinitely.~Have humans choose a new leader – considered an “act of god”, as the change occurs via manual intervention outside of the system. Limited by how quickly the humans respond.~Use an algorithm to select a new leader. This requires a consensus algorithm.
+
+A single-leader database can provide linearizability with a consensus algorithm, but it still requires consensus to choose a new leader – in effect just kicking the need for consensus down the road.
+
+Tools like <a href="https://zookeeper.apache.org/">ZooKeeper</a> provide an “outsourced” consensus, failure detection, and membership service. It is not easy to use but much better than trying to develop your own algorithms.
+
+Leaderless and multi-leader replication systems do not typically use global consensus. The conflicts that occur here a result of not having consensus across different leaders and maybe it is okay to do without linearizability in this way – maybe we can learn to work with data that has branching and merging version histories.
+
+ 
+
+ line:
+
+
+title:Part III: Derived Data
+ 
+
+In parts I and II, we discussed the major considerations that go into distributed databases, from the layout of data on disk all the way to the limits of distributed consistency in the presence of faults. All of this, however, assumed that there was only one (distributed) database.
+
+ 
+
+In the real world, systems are often much more complex. Different databases are optimized for different access patterns. Database vendors will claim that their solution can fulfill all of your needs but this is usually not the case. In the final part of DDIA, we will review the issues around integrating multiple different data systems.
+
+ 
+
+On a high level, systems that store and process data can be grouped into two categories:
+
+list:^<b>Systems of record</b>: Also known as <b>source of truth</b>. These hold the authoritative version of your data. When new data arrives (e.g. as user input), it is first written here. Each fact is represented exactly once (the data is <b>normalized</b>: split out into many small tables to reduce data duplication).~<b>Derived data systems</b>: Data that is the result of taking existing data from somewhere else (a system of record, or maybe another derived data set) and transforming or processing it in some way. If you lose derived data, you can recreate it by running the processing step again. <b>Denormalized</b> data (joins of small tables into a single query), indexes, and materialized views all fall under this category. In recommendation systems, predictive summary data is often derived from usage logs. A cache is also an example of derived data as the data still exists somewhere else, it is just faster to access it in a cache. 
+
+ 
+
+Not all architectures make a clear distinction between systems of record and derived data. Most databases, storage engines, and query languages are not inherently systems of record or derived data either – they are just tools.
+
+ 
+
+<b>Chapter 10</b>: We examine how batch-oriented dataflow systems such as MapReduce gives us good tools and principles for building large scale data systems.
+
+<b>Chapter 11</b>: We explore how we can do the same thing with lower delays using streams.
+
+<b>Chapter 12</b>: We explore how we might use these tools to build reliable, maintainable, and scalable applications in the future.
+
+
+line:
+
+
+
+title:Chapter 10: Batch Processing
+ 
+
+Let’s define 3 different systems:
+
+list:^<b>Services (online systems)</b>: Waits for a request to come in and then attempts the handle that request as quickly as possible, sending a response to the requester. Speed is typically the main measure of performance. Services are expected to have high availability.~<b>Batch Processing systems (offline systems)</b>: Takes a large amount of data, runs a <b>job</b> to process it, and produces an output. Jobs can take a while: from several minutes to several days – there normally isn’t a user waiting for the job to finish. Instead, jobs are often scheduled to run on an defined interval (e.g. once per day). Performance is measured in <b>throughput</b>, how long it takes to crunch through an input dataset of a certain size.~<b>Stream processing systems (near-real-time systems)</b>: Somewhere in between online (real time) and offline/batch processing. Stream processing acts on events shortly after they happen, while a batch job operates on a fixed dataset.
+
+ 
+
+ 
+
+<b>Batch processing with Unix Tools</b>
+
+<code>
+cat var/log/nginx/access.log | # cat: read the log file. The pipe (|) operator chains outputs to inputs
+  awk '{print $7}' |           # Split each line into fields by whitespace, keep only 7th field
+  sort                         # Alphabetically sort the lines
+  uniq -c                      # Check neighbors. -c: add a counter for repeats
+  sort -r -n                   # Sorts based on the (-n) number at the start of each line (added by uniq), -r: returns in reverse order
+  head -n 5                    # Returns just the first 5 lines
+Unix tools are very powerful – the above example can sort through gigabytes of data in a matter of seconds!
+</code>
+
+You can use replit to play around with Bash in your browser. You can even add text files to a mock file system: <a href="https://replit.com/new/bash">link</a>
+
+ 
+
+Unix commands are so efficient in part because they follow the Unix design philosophy (1978):
+
+list:^<i>Make each program do one thing well. To do a new job, build afresh rather than complicate old programs by adding new "features".</i>~<i>Expect the output of every program to become the input to another, as yet unknown, program. Don't clutter output with extraneous information. Avoid stringently columnar or binary input formats. Don't insist on interactive input.</i>~<i>Design and build software, even operating systems, to be tried early, ideally within weeks. Don't hesitate to throw away the clumsy parts and rebuild them.</i>~<i>Use tools in preference to unskilled help to lighten a programming task, even if you have to detour to build the tools and expect to throw some of them out after you've finished using them.</i>
+
+The Unix philosophy is similar today to Agile and DevOps – these ideas have endured over 40+ years.
+
+ 
+
+To chain inputs and outputs together, you need a uniform interface. By convention, many (but not all) Unix commands treat a sequence of bytes as ASCII text – a list of records separated by a newline (\n).
+
+ 
+
+Unix tools use standard input (<b>stdin</b>) and standard output (<b>stdout</b>). If not specified, stdin comes from the keyboard and stdout goes to the screen. <b>Pipes</b> (this character: | ) allow you to attach the stdout of one process to the stdin of another.
+
+ 
+
+Some things that make Unix tools successful:
+
+Input files are normally treated as immutable: you can run the commands as many times as you want without risk of damaging your input.~You can end the pipeline at any point and view the output. This makes debugging easy.~You can write the output of one stage to a file and read the file for a later stage. This allows you to restart the pipeline with some sort of checkpoints.
+
+ 
+
+The biggest limitation of Unix tools is that they run on a single machine.
+
+ 
+
+ 
+
+<b>MapReduce and Distributed Filesystems</b>
+
+MapReduce (published by Google in 2004) is like Unix tools but distributed across potentially thousands of machines. MapReduce takes one or more inputs and produces one or more outputs. Like Unix tools, it is blunt, brute-force, but very effective. MapReduce does not normally modify the input or have any side effects besides the output.
+
+ 
+
+While Unix tools use stdin and stdout, MapReduce reads and writes files on a distributed filesystem. In the Hadoop implementation, that filesystem is called <b>HDFS (Hadoop Distributed File System)</b>, an open source reimplementation of the Google File System (GFS). Other implementations include: Amazon S3 and Azure Blog Storage.
+
+ 
+
+HDFS works like this: each machine has a daemon running on it, exposing a network service that allows other nodes to access files stored on that machine. A central server called the NameNode keeps track of which file block is stored on which machine. HDFS conceptually creates a big filesystem that can use the space of all machines running that daemon. 
+
+ 
+
+For fault tolerance, data is replicated on multiple nodes. HDFS scales well with some of the biggest deployments running on tens of thousands of machines with a storage capacity of hundreds of PBs!
+
+ 
+
+MapReduce itself is a programming framework that allows you to write code to process large datasets in a distributed filesystem. 
+
+MapReduce works like this:
+
+list:Read a set of input files. Break them up into <b>records</b>.~Call the mapper function to extract a key and value from each record.~Sort all key/value pairs by key.~Call the reducer function over the sorted key/value pairs and combine those values.
+
+Steps 2 (mapper) and 4 (reducer) are where you write your custom code.
+
+ 
+
+Since the data is divided up between machines, a mapper runs on each machine, processing that section of the data. This is known as <b>putting the computation near the data</b> – which save having to transport the data over a network connection.
+
+ 
+
+MapReduce is limited in its ability to process data on a single job. Often MapReduce jobs need to be chained together in what is known as a <b>workflow</b>. There is no direct support in the Hadoop framework. Instead, the output of the first MapReduce job is configured to be the input of the next one. Each MapReduce must wait for the job before it to complete successfully (unsuccessful jobs are discarded). In a recommendation system, it would be common to chain 50 to 100 MapReduce jobs together.
+
+A log of things a user did on a website: <b>activity events</b> or <b>clickstream data</b>.
+
+ 
+
+Uses for MapReduce: Google originally used 5-10 MapReduce jobs to index its search results. Another use is to build machine learning systems such as classifiers (e.g. spam filters, anomaly detection, image recognition) and recommendation systems (e.g. people you may know, products you may be interested in).
+
+ 
+
+ 
+
+<b>Philosophy of Batch Process Outputs</b>
+
+The Unix philosophy encourages very explicit dataflow: The input is immutable, the process has no side effects, and the output completely overwrites any previous output. Benefits of this include:
+
+list:If you introduce a bug that creates incorrect or corrupted data, you can roll back and rerun the job as this will overwrite the corrupted data. If you job had a side effect like writing to a database, rolling back and rerunning would do nothing to fix your bad data.~Being able to rollback quickly allows for rapid prototyping and development. The concept of <b>minimizing irreversibility</b> is beneficial for Agile software development.~If a map or reduce task fails, the job can be automatically rerun. If the failure was due to a bug, the attempts will stop after a few more failures. If, however, the failure is due to a transient bug, the re-runs will succeed, allowing your MapReduce jobs to tolerate transient faults.~The same set of input files can be used for different jobs as they are immutable.~Like Unix tools, we separate the logic from the wiring. This allows one team to focus on implementing a job that does one thing well and another team can focus on where and how to use that job.
+
+ 
+
+ 
+
+<b>Comparing Hadoop to Distributed Databases</b>
+
+list:<b>Diversity of storage</b>: Databases that do jobs similar to the HDFS have been around for a while and are known as <b>massively parallel processing (MPP) databases</b>. The main different difference between HDFS and MPP is that MPP, like all databases, has to structure the data before it can store it. HDFS can accept data without any schema, allowing you to dump large amounts of unstructured data into the HDFS and figure out what to do with it later. This approach has been dubbed the <b>sushi principle</b>: raw data is better. Data processing still occurs using MapReduce jobs: raw data is taken from the HDFS, processed, and dumped into a MPP database. This decouples data collection from data modeling.~<b>Diversity of Processing Models</b>: MPP databases couple you to certain technologies like SQL. HDFS allows you to use a variety of different processing models when working with your data.~<b>Designing for Frequent Faults</b>: MapReduce jobs are eager to write to disk. Between each job in a workflow, the data is written out. This means that the job can resume at any of these checkpoints if the next job fails. This has the benefit of optimizing your compute resources. It is likely that you will not have all of your compute being used by your MapReduce jobs so you can make your MapReduce jobs lower priority and allow your compute to be used by other tasks. This will sometimes mean that a MapReduce job gets kicked. Not a problem, though, as the job can start over at its last checkpoint when compute resources free up again.
+
+ 
+
+ 
+
+<b>Beyond MapReduce</b>
+
+Although MapReduce is very popular, there are other models for distributed systems. MapReduce has the benefit of being easy to understand, but is actually quite hard to implement. This has led to various higher-level programing models being developed: Pig, Hive, Cascading, Crunch.
+
+ 
+
+<b>Materialization of Intermediate State</b>: When one MapReduce job outputs to a file directory, that data can be used by anyone or even multiple anyones. If, however, the output is only used as the input for the next job in the workflow, then it is known as <b>intermediate state</b>. The process of writing intermediate state is known as <b>materialization</b>. It means to eagerly compute the result of some operation and write it out, rather than computing it on demand. Unix pipes do not materialize their intermediate state and instead use a small memory buffer to store the result of one operation before streaming it to the next one.
+
+Some downsides of materialization:
+
+list:The next job can only start when the previous one has finished writing. If the job takes in multiple inputs, it must wait for all of those inputs to complete. Unix pipes on the other hand start all processes at once and data is consumed by one as soon as it is processed by the other (i.e. it will immediately process any partial data via streaming).~Storing intermediate state in a distributed database often means that intermediate state is copied on several nodes. This could be seen as overkill as this intermediate data is only needed during processing.
+
+ 
+
+ 
+
+<b>Dataflow Engines</b>
+
+To fix problems with MapReduce, several new execution engines were developed: Spark, Tez, Flink. They each have design differences but have one thing in common: they handle the entire workflow as one job, rather then several independent sub-jobs. Like MapReduce, they work by repeatedly calling a user-defined function to process one record at a time on a single thread. They parallelize work by partitioning inputs, and they copy the output of one function over the network to become the input for another function. Unlike MapReduce, they do not strictly separate into Map and Reduce. Each function is called an <b>operator</b>.
+
+ 
+
+Dataflow engines have several advantages over MapReduce:
+
+list:Expensive operations like sorting are only done when actually needed.~No unnecessary map work as the work done by the mapper can often be incorporated into the previous reduce operator.~No need to write intermediary to a HDSF between each operator.~Operators can begin processing data as it arrives (streaming) rather than waiting for the previous operator to complete.
+
+ 
+
+MapReduce is still more fault tolerant because it materializes intermediate state. To address this, data engines will recompute any missing pieces of data after a crash. When recomputing data, it is desirable to have operators be <b>deterministic</b> (running multiple times has the same result). Since some data may already be being processed by downstream operators, if operators are non-deterministic then downstream operators will need to be stopped as well, causing cascading faults.
+
+ 
+
+ 
+
+ 
+
+<b>Chapter 10 Summary</b>:
+
+In this chapter we explored batch processing and started by looking at <b>Unix tools</b> (such as: <b>awk, grep, sort</b>) and how the <b>design philosophy</b> of these tools carried forward into <b>MapReduce</b> and more recent dataflow engines. Some of those design principles include:
+
+list:<b>Immutable inputs</b>: Running a tool on a dataset (input) will not affect or damage that dataset.~<b>Outputs are meant to be inputs</b>: Outputs are meant to be inputs for another (yet unknown) tool.~<b>Small tools that do one thing well</b>: Complex problems are solved by composing small tools that do one thing well.
+
+In Unix, the uniform interface that allows one program to be composed with another is <b>files</b> and <b>pipes</b>. In MapReduce, the interface is a <b>distributed filesystem</b>. Dataflow systems add their own pipe-like data transport mechanism to avoid materializing intermediate state to the distributed file system. The initial input and final output are still typically files in the <b>HDFS</b>.
+
+ 
+
+Two main problems that distributed batch processing frameworks need to solve:
+
+list:^<b>Partitioning</b>: In MapReduce, mappers are partitioned according to input file blocks. The output of mappers is repartitioned, sorted, and merged into a configurable number of reducer partitions. The purpose of this is to bring all the related data (records wit the same key) together in one place.~<b>Fault tolerance</b>: MapReduce frequently writes to disk which makes it easy to recover from a crash but slower to process data. Dataflow engines perform less materialization and keep more intermediate state in memory. In the event of a crash, this means that nodes must do more work to recompute state but that nodes are faster when they remain failure-free.
+
+ 
+
+We discussed several join algorithms used by MapReduce, and that are typically used internally by MPP databases and dataflow engines:
+
+list:<b>Sort-merge joins</b>: Each of the inputs being joined goes through a mapper that extracts the join key. By partitioning, sorting, and merging, all records with the same key end up going to the same reducer.~<b>Broadcast hash joins</b>: One of the two joins is small and it is not partitioned so it can be entirely loaded into a hash table. You start the mapper on each partition of the large join input, and for each entry, you load and compare it to the hash table.~<b>Partitioned hash joins</b>: If the two join inputs are partitioned in the same way (same key, same hash function, and same number of partitions), then the hash table approach can be used independently for each partition.
+
+ 
+
+Distributed batch processing engines have a deliberately restricted programming model: callback functions (such as mappers and reducers) are assumed to be stateless and to have no side effects other than their designated output. This hides many of the harder problems of distributed computing: in the face of crashes and network issues, tasks can be safely retried as the input was never changed and the output of failed tasks can be safely discarded.
+
+ 
+
+The distinguishing feature of batch processing jobs is that it reads some input data, and produces some output data without modifying the input data. The output is <b>derived</b> from the input. The input is batch jobs is <b>bounded</b> – it has a fixed size and the task will known when it has finished reading the data. In the next chapter, we will discuss stream jobs, in which the input is <b>unbounded</b> – the data is a never-ending stream of information. In streaming, the job is never complete.
+
+ 
+line:
+
+ 
+
+ 
+

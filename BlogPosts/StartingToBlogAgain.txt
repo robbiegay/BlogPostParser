@@ -1,0 +1,21 @@
+title:Starting to blog again
+
+During the Awesome Inc bootcamp in 2019, we were all challenged to keep a weekly blog. This is something I really enjoyed -- and that I kept at for a few months after the bootcamp (monthly posts until May 2020). I made one more post in May of 2021 and have not posted since.
+
+I have a few topics I have been writing about (mostly reviews/summarys of technical books), and I thought I would start the blog back up. When thinking about posting again, I looked at some old posts and realized that I missed the personal side of blogging -- sharing small updates about what has been going on in my life.
+
+To get the blog back up, I have to do a few things:
+- Some general mainence and updates to the website
+- Writing a few blog posts:
+	- A post saying that I will be posting again (this post!)
+	- Year in Review posts for 2020, 2021, 2022, and a short post of what has been going on so far in 2023
+	- A post talking about my "read more technical books" goal
+	- Adding a few already written reviews/summaries of technical books as posts to this blog
+- Create a utility script that will parse a text file (blog post) into some html: <a>link</a>. I used to write the blog post and then manually format them into html. I am hoping to streamline my blog writing a little bit by writing this utility program
+
+I'm exciting to be posting on this site again! Check out my year in review below:
+- <a>2020 Year in Review</a>
+- <a>2021 Year in Review</a> [Coming Soon]
+- <a>2022 Year in Review</a> [Coming Soon]
+
+image:path/url~alt text*a caption lol

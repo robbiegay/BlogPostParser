@@ -1,0 +1,215 @@
+We have to model real world information in terms of objects and data structures.
+
+ 
+
+<b>Data Modeling</b>:
+
+Historically, data was represented in one big tree (hierarchical data models) but that wasn’t good at representing many-to-many relationships so the relation data model was developed. Although relational database are very popular, some data still isn't modeled well this way, so two types of nonrelational (NoSQL) data models have been developed:
+
+<ul><li>Document DBs: The data coming in is self-contained documents and relationships between documents is rare.</li><li>Graph DBs: Opposite direction – target situation is where anything is potentially related to anything else. Graph DBs consist of a series of vertexes (data) and edges (connections between data).</li></ul>
+
+All three – document, relational, and graph – are widely used today.
+
+Document and graph DBs don't enforce a schema – not to say there isn't one, just not required. This is the difference between explicit schema (enforced on write – if you don’t match the schema, your write will fail) and implicit (schema is assumed on read).
+
+  
+
+<b>Query Languages</b>:
+
+Imperative languages – many programing languages are imperative – give a list of steps to achieve a goal. Ie. make a sandwich: get out bread loaf, slice two slices, get out peanut butter…
+
+Declarative languages: you just give the desired result. SQL is declarative: you give a pattern (I want all records where Location is “USA”) and the database engine optimizes and determines the steps needed to reach that goal. This hides complex implementation details from the user. Declarative languages often lend themselves to parallel execution via only giving a requested outcome. This means that optimization can be made behind the scenes. This is good as modern computers are getting faster by added more cores (parallel processing power) rather than running higher clock speeds.
+
+ 
+
+<b>MapReduce</b>:
+
+MapReduce is a programming model for processing large amount of data in bulk across many machines. It was popularized by Google.
+
+Map (also known as collect) and reduce (also known as fold or inject) are similar to functions that exist in many functional programming languages. In the style of functional programming, the map and reduce functions must be pure: they only use the data passed in as input, no additional internal database calls, and they must not have any side effects. Map gathers the data you need and reduce does processing on that data.
+
+More details on MapReduce can be found in chapter 10 summary.
+
+ 
+
+Some interesting research is ongoing on other data models:
+
+Genome data: often needed to perform sequence-similarity searches which means taking a really long string (representing a DNA molecule) and matching it against a large database of strings that are similar but not identical. Specialized genome database software: GenBank
+
+Partial physicists have been doing Big Data-style large-scale data analysis for decades and the Large Hadron Collider (LHC) works with hundred of Petabytes. At such scale, custom solutions are needed.
+
+Full text search is arguably a kind of data model used alongside databases.
+
+ 
+line:
+ 
+
+title:Chapter 3: Storage and Retrieval
+ 
+
+Chapter 3 covers how to store and retrieve information via databases.
+
+ 
+
+<b>Append-only databases<b/>:
+
+A naïve implementation of a database could be as simple as a text file that has information added to the end of the file. Adding new data to the end of a text file is fast, making database writes very efficient! Unfortunately, reads are slow, as the database must be scanned from beginning to end looking for requested data – a O(n) time operation.
+
+An optimization we can make is to add indexes to our database. Indexes are metadata added to the data that tells us where to efficiently find it. This could be a simple hashtable. To do this, we would give each piece of data a key, and the matching value is an offset in our file of where to find the data.
+
+ 
+
+<b>Example</b>:
+
+<code>
+Data File:
+
+[location 0] (key: 123, value: dog) (key: 456, value: fish)
+
+[location 12] (key: 789, value: cat) (key: 000, value: mouse)
+
+ 
+
+Hashtable:
+
+key: 123, value: 0
+
+…
+
+Key 789, value: 12
+</code>
+
+ 
+
+When we query for a key with an index on it, our hash function quickly gives us the offset of where to find out data, and we have optimized to O(1) reads!
+
+ 
+
+You can add multiple indexes to a dataset. Each additional index adds processing time to your write operations – you are making a tradeoff between efficient writes and efficient reads. This could be a good time to think about the use case of your database. If your application expected to have frequent writes but few reads, you might want to optimize for writes (this includes optimizations beyond our simple indexing optimization). Likewise, a database receiving frequent reads could consider optimizing for that use case.
+
+Continuing with our append-only log implementation, adding a new data entry is as simple as appending to the end of the file. To update data, we append a new entry, and on reads, we take only the most recent entry matching a given key – old data is still in the database but the user only sees the most recent entry. We also overwrite any indexes that point to old data and we make sure that it points to the most recent entry. To delete data, we append a special entry that saying the something to the effect of: “this item has been deleted”. Reads for that data will now give the same result as if the entry did not exist in the database (ie returning no result). These special “delete” entries are sometimes known as tombstones.
+
+As we continue to add data to our append-only log, our log will likely grow too large given enough use. To combat this, we can implement a process called compaction. Compaction will scan through the database and delete all duplicate entries except for the most recent one. For tombstone entries, all entries for that data could be deleted. Compaction keeps our read only log at a manageable size.
+
+ 
+
+We have now built a simple and efficient read and write database. A few details to round out our database implementation:
+
+Indexes are often kept in memory to improve performance. If the database crashes, these would be lost. You could rescan the database when you restart the database but this could be time intensive. A better solution would be to occasionally save a snapshot of the indexes that can be used to rebuild the indexes quickly if the database crashes.
+
+Database files are often kept in a non-human readable, binary format to improve performance.
+
+Crashes can lead to a partially written entry. To avoid database corruption, the database should include checksums that show that certain entries are corrupted. These entries remain in the log but are ignored by the system. When compaction runs, they are removed from the database.
+
+It is common to implement multiple read threads and a single write thread, to avoid complications around concurrent writes.
+
+ 
+
+<b>Update in place databases</b>:
+
+An alternative to the append-only log is the update in place implementation. Rather than appending to the end of the file, if an entry already exists, it is updated. Only one copy of each entry exists in the database. There is no need for a compaction process.
+
+ 
+
+<b>Advantages of append-only log over update in place</b>:
+
+Appending to a append-only log is faster than finding a file location and updating files at random.
+
+While checksums on the append-only log prevents corruption of partially written records, update in place can lead to corrupted data.
+
+Updating in place requires latches (lightweight locks) to prevent reads from seeing the database in an inconsistent state
+
+<b>Downsides to append-only log</b>:
+
+The hashtables that we use to index the database must fit in memory.
+
+Range queries are quite inefficient
+
+  
+ 
+  
+
+<b>SSTables and LSM-Trees</b>:
+
+A way to continue to improve our append-only log is to store keys in a Sorted String Table or SSTable. Rather than keeping a full index of entry in the database, we can keep a much sparser data structure while still maintaining constant time lookups. The way this works is similar to a physical dictionary that keeps the starting word at the top of the page. We can keep a list of the starting words for each page, and once we get close enough to the word we are looking for (ie the correct page) we can quickly scan through that page manually. In practice, this looks like one entry for every kilobyte of data.
+
+image:SSTable.png~SSTables
+
+<b>How to construct and maintain an SSTable</b>:
+
+When a new write comes in, keep it in an in-memory sorted data structure like a balanced tree (sometimes referred to as the memtable). When the memtable exceeds a certain size (usually a few MBs), write it to disk as a new segment. Since the memtable is already sorted, we can just write it as is. While writing the old memtable, writes can continue on a new memtable. In order to perform a read, first check the memtable, then the segments on disk from newest to oldest. From time to time, run compaction on the segments as a background task. For crash safety, keep an append-only log of all writes in the memtable. If a crash occurs, all the writes are not lost and con be recovered from the log. When the memtable is committed to disk, discard the append only log.
+
+ 
+
+The algorithm we have described for creating a SSTable is essentially a Log-Structured Merge-Tree (LSM Tree). LSM-Trees can be slow to lookup data as checking first a memtable and then every segment in storage just to determine that some piece of data does not exist is very inefficient. A bloom filter – a memory efficient data structure for approximating the contents of a dataset – can be helpful here.
+
+LSM-Trees are gaining acceptance but are still not the most common indexing structure – the most common indexing structure is still the binary tree (B-Tree) which is used in almost all relational databases and many non-relation databases.
+
+ 
+
+<b>B-Trees</b>:
+
+B-Trees break data down into fixed page sizes (usually 4KB). The page contains either references to more pages or data (a page with data is called a “leaf page”). The number of references to child pages is called a branching factor. This is a very efficient way to index. Most databases only contain 3 or 4 levels of binary tree branches. A 4-level index with 4kb pages and a branching factor of 500 can store up to 250TB!
+
+B-Trees often use a write ahead log (WAL) – an append-only log that is kept in case of a database crash.
+
+ 
+image:BTree.png~BTree
+
+<b>A random note from the chapter that I wanted to include</b>:
+
+Fuzzy indexes: fuzzy indexes are used to include index matches that are close but not exact, like misspellings.
+
+ 
+
+ 
+
+<b>In-memory databases</b>:
+
+The reasons to save data to disk in a database is: storage is cheaper than memory (RAM) and disk storage is stable (not lost on power failure). As RAM has grown cheaper, in-memory databases have been developed. These can be made stable via: special hardware (battery powered RAM), WAL, periodic snapshots to disk, or replicating in-memory databases across multiple nodes for redundancy.
+
+ 
+
+ 
+
+<b>Database use cases – OLTP vs OLAP</b>:
+
+There are typically two use cases for stored information: OLTP and OLAP
+
+ 
+image:OLTP-vs-OLAP.png
+
+
+<b>OLTP: Online Transaction Processing</b>:
+
+Some databases are user facing. In these databases, users are sending really high volumes of reads and writes to small sections of data. Ie viewing and creating social media posts, viewing and purchasing items on online retails. Each user action touches only a small subset of data but there are many users creating many queries so the bottleneck is disk seek time as a large volume of these small queries run.
+
+ 
+
+<b>OLAP: Online Analytics Processing</b>:
+
+Some databases are business facing – they are used for business information and decision making.  Businesses need to draw conclusions from large volumes of data. This is different from OLTP with small, frequent changes (involving both reads and writes) to relatively infrequent read operations over very large volumes of data. These large queries can be performance intensive and could degrade the OLTP database performance.  This is especially bad as user facing systems like OLTP typically need to be performant, where business analysts would typically tolerate relatively longer processing times. Because of these different use cases, OLAP database solutions are often different and entirely separate from OLTP.
+
+
+image:ETL.png
+
+
+
+A typical system could involve several different user facing applications, each with its own OLTP database. In the above image, customers, warehouse workers, and truck drivers are all working with their own apps. An ETL process is run on these databases: extracting the data from each, transforming it into a format that is useful for the OLAP database, and then loading it into the OLAP database. This could be done in several large batches (perhaps once per day) or streamed into the OLAP as new data arrives. The OLAP data is held in a data warehouse which is optimized for OLAP queries.
+
+image:Fact-Table.png
+
+Many data warehouses use a star schema – a central “fact” table with branches off of it in the shape of a star. Each fact represents a thing that happened: a purchase, a click, etc. This contains both attributes (values) and foreign key references to dimension tables (the branches off of the central star). Each fact is an event, each dimension is a who, what, when, where, why. Fact tables can be big (10s of PBs for big enterprise like Apple, Walmart, eBay).
+
+ 
+
+<b>Column oriented storage</b>:
+
+Facts can be very large and often we will query against a large volume of facts but only need a few pieces of information from each fact. Pulling up each fact (which could contain hundreds of pieces of information) only to select a small subset of that fact’s information, is very inefficient. A solution to this is column oriented storage. 
+
+Instead of storing facts as one unit, you store each attribute of a fact as its own data entry. This means that if there is a “purchase date” attribute, rather than having each purchase data as a part of a fact, you group all of the purchase dates on their own. Now when you need to query all purchase dates, you only have to look in one place. 
+
+This is often implemented by adding all data in the same order. So fact #12354 could have the 1005th purchase-date and the 1005th total-tax-amount. Ordering is very important in column oriented storage.
+
+line:
+ 

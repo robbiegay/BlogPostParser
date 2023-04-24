@@ -34,6 +34,17 @@ void Main()
 		{
 			output += ParseRating(line[7..]);
 		}
+		else if (line.Length >= 7 && line[0..6] == "quote:")
+		{
+			output += ParseQuote(line[6..]);
+		}
+		else if (line.Length >= 6 && line[0..5] == "list:")
+		{
+			if (line[5] == '^')
+				output += ParseList(line[6..], true);
+			else
+				output += ParseList(line[5..]);
+		}
 		else
 		{
 			if (string.IsNullOrWhiteSpace(line))
@@ -54,7 +65,8 @@ void Main()
 private string GetFilePath()
 {
 	Console.WriteLine("Enter an input file path (without file name):");
-	var filePath = Console.ReadLine();
+	var filePath ="";
+	//filePath = Console.ReadLine();
 	filePath = @"C:\Users\rgay\Documents\LINQPad Queries\personal\BlogPosts\"; // FOR TESTING
 
 	if (filePath[filePath.Length - 1] != '\\')
@@ -68,7 +80,8 @@ private string GetFilePath()
 private string GetFileName()
 {
 	Console.WriteLine("Enter the name of your blog file:");
-	var fileName = Console.ReadLine();
+	var fileName = "";
+	//fileName = Console.ReadLine();
 	fileName = @"DDIA.txt"; // FOR TESTING
 	Console.WriteLine($"\toutput path: {fileName}");
 
@@ -247,6 +260,115 @@ private string ParseRating(string rating)
 	return output;
 }
 
+private enum QuoteType
+{
+	Quote,
+	Author,
+	Title
+}
+
+public string ParseQuote(string input)
+{
+	QuoteType quoteType = QuoteType.Quote;
+	var quote = "";
+	var author = "";
+	var title = "";
+	
+	for (int i = 0; i < input.Length; i++)
+	{
+		var item = input[i];
+
+		if (item == '~')
+		{
+			quoteType = QuoteType.Author;
+		}
+		else if (item == '*')
+		{
+			quoteType = QuoteType.Title;
+		}
+		else if (quoteType == QuoteType.Author)
+		{
+			author += item;
+		}
+		else if (quoteType == QuoteType.Title)
+		{
+			title += item;
+		}
+		else
+		{
+			quote += item;
+		}
+	}
+
+	var output =
+$"""
+<blockquote class= "blockquote">
+	<p class="text-muted">
+		<small>
+			"{quote}"
+		</ small>
+	</ p>
+""";
+
+if (!string.IsNullOrWhiteSpace(title) && !string.IsNullOrWhiteSpace(author))
+{
+		output += "\n";
+		output += 
+$"""
+	<footer class="blockquote-footer"> {author}, <cite title="{title}">{title}</ cite></ footer>
+""";
+}
+
+output += "\n</ blockquote>";
+
+	return output;
+}
+
+public string ParseList(string input, bool isOrdered = false)
+{
+	var result = "";
+
+	if (isOrdered)
+		result += "<ol><li>";
+	else
+		result += "<ul><li>";
+
+	for (int i = 0; i < input.Length; i++)
+	{
+		var c = input[i];
+		
+		if (c == '*')
+		{
+			result += "</li>";
+			
+			var subList = "";
+			
+			while (input[++i] != '*')
+			{
+				c = input[i];
+				
+				subList += c;
+			}
+			
+			result += ParseList(subList, isOrdered);
+			result += "<li>";
+		}
+		else if (c == '~')
+		{
+			result += "</li><li>";
+		}
+		else
+			result += c;
+	}
+
+	if (isOrdered)
+		result += "</li></ol>";
+	else
+		result += "</li></ul>";
+		
+	return result;
+}
+
 private void PrintProtocol()
 {
 	Console.WriteLine("Blog Parser:");
@@ -256,6 +378,10 @@ private void PrintProtocol()
 	Console.WriteLine("To add an image gallery (must end each item with ';', ~ = alt text, * = description) \n\t-> gallery:path-url/image1.jpg~alt text*description;path-url/image2.jpg;");
 	Console.WriteLine("To add a rating (max of 5) for a book review\n\t-> rating:4 (4/5 stars)");
 	Console.WriteLine("To add a line break \n\t-> line:");
+	Console.WriteLine("To add a quote \n\t-> quote:my quote...~Author*Title");
+	Console.WriteLine("To add an unordered list \n\t-> list:item~item~item");
+	Console.WriteLine("To add an ordered list \n\t-> list:^item~item~item");
+	Console.WriteLine("To add an sub lists \n\t-> seperate items via *item~item*");
 	Console.WriteLine("To add a paragraph \n\t-> Just write some text and seperate it like a normal paragraph!");
 	Console.WriteLine("");
 }

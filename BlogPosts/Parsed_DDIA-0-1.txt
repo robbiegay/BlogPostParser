@@ -1,0 +1,184 @@
+<h3 className="text-center">Book Review: Designing Data-Intensive Applications by Martin Kleppmann</h3>
+
+<p>
+	<b><u>Rating</u></b>:
+</p>
+
+<p>
+	&#11088; &#11088; &#11088; &#11088; &#11088; 
+</p>
+
+<p>
+	<b>Readability</b>: DDIA is a technical read, but is engaging and fairly easy to follow. On my first attempt as a new QA, this was over my head. With a little bit of Dev experience, I think it is informative and easy to read. 
+</p>
+
+<p>
+	<b>Length</b>: At 550 pages, it is a long book.
+</p>
+
+<p>
+	<b>Foundational/How-To</b>: DDIA cover high-level topics. I think this is more of a theory/foundational book, as opposed to something like <a href="https://www.manning.com/books/asp-net-core-in-action-third-edition">ASP.NET Core in Action</a> which I would consider a “How-to”, as it cover specific technologies and walks you through hands-on exercises.
+</p>
+
+<p>
+	<b>Overall</b>: DDIA is probably the best technical book I have read. So much so, that when I finished it in February of 2023, I immediately started going through it again to take detailed notes which I have written out below.
+</p>
+
+
+<hr />
+
+
+<p>
+	<b><u>Summary/Notes</b></u>:
+</p>
+
+<p>
+	<i>Note: DDIA felt like an important book, and I wanted to re-read it chapter-by-chapter, summarizing the topics covered. I tried to put some parts in my own words, while at other times, Martin Kleppmann said it best and I simply copied down what he wrote verbatim.</i>
+</p>
+
+<p>
+	Designing Data-Intensive Applications is probably the best technical book I have ever read. To quote a few people:
+</p>
+
+<p>
+	“This book should be a required reading for software engineers. Designing Data Intensive Applications is a rare resource that connects theory and practice to help developers make smart decisions” 
+</p>
+
+<p>
+	- Kevin Scott CTO of Microsoft. 
+</p>
+
+<p>
+	Jay Kreps (creator of Apache Kafka) says it “bridges a huge gap between distributed system theory and practical engineering.” Finally, <a href="https://teachyourselfcs.com/">teach yourself cs</a>, names it as one of two technical books that give readers the most return on time invested (the other book being <a href="https://csapp.cs.cmu.edu/">Computer Systems: A Programmer's Perspective</a>).
+</p>
+
+<p>
+	The book can be a little heavy. This was my second attempt reading it, the first being a few months into my QA job at OldCo and I got lost pretty quickly. If you pick this up and do find it challenging, I suggest that you at least read his closing essay in chapter 12 titled “Doing the right thing” (pages 533-43 in my print version). This is higher level (read: easier) from a technical standpoint and is a strong review of the ethics of big data ethics (or “big surveillance” as the author might call it).
+</p>
+
+<p>
+	I am going to try to summarize some key points from each of the 12 chapters.
+</p>
+
+<br />
+
+<br />
+
+<br />
+
+
+<hr />
+
+
+<h3 className="text-center">Preface</h3>
+
+<p>
+	Data-intensive vs compute-intensive: Data-intensive applications are where data not compute is the challenge: the quantity of data, the complexity, and the speed at which it changes.
+</p>
+
+
+<hr />
+
+
+<h3 className="text-center">Part I: Foundations of Data Systems</h3>
+
+<p>
+	Part I discusses the fundamental ideas that apply to all data systems, regardless of if they are running on a single machine or distributed across a cluster of machines.
+</p>
+
+
+<hr />
+
+
+<h3 className="text-center">Chapter 1: Reliable, Scalable, and Maintainable Applications</h3>
+
+<p>
+	Data-intensive applications are typically built from standard building blocks:
+</p>
+
+<p>
+	<ul><li>Store information (databases)</li><li>Remember the result of expensive operations to speed up future reads (caches)</li><li>Search by keyword or filter (search indexes)</li><li>Send a message to another process to be handled asynchronously (stream processing)</li><li>Periodically crunch large amount of accumulated data (batch processing)</li></ul>
+</p>
+
+<br />
+
+<p>
+	Applications all have:
+</p>
+
+<p>
+	<ul><li>Functional requirements: what it should do such as storing and processing data</li><li>Nonfunctional requirements: security, reliability, compliance, scalability, compatibility, maintainability</li><ul>
+</p>
+
+<br />
+
+<p>
+	This chapter introduces 3 of the most important nonfunctional requirements for data-intensive applications:
+</p>
+
+<p>
+	<b>Reliability</b>: 
+</p>
+
+<p>
+	The system should work correctly even in the face of adversity.
+</p>
+
+<p>
+	Reliability is about making the system work correctly even in the presence of faults. Faults can be hardware (typically random and uncorrelated. Although hardware can be generally very reliable, even low failure rates add up when you are dealing with large amounts of hardware – example: hard disks are reported to have a mean time to failure (MTTF) of 10 to 50 years. In a large storage cluster with 10,000 disks, you should expect an average of one failure per day), software (bugs are systematic and typically harder to deal with), or human (human error – a study of large internet service providers found that most outages were caused by operator error). Fault-tolerance techniques can hid certain types of faults from the end user.
+</p>
+
+<p>
+	Reducing human errors: 
+</p>
+
+<p>
+	<ul><li>Make it easy to do the right thing (well designed APIs and admin UIs)</li><li>Decouple the places where people make the most mistakes (sandbox and dev/testing environments separated from pod)</li><li>Test thoroughly at all levels</li><li>Allow quick rollback from human errors (easy to rollback config changes)</li><li>Setup detailed and clear monitoring (telemetry) so that you can see problems coming</li><li>Implement good management practices and training</li><ul>
+</p>
+
+<p>
+	<b>Scalability</b>:
+</p>
+
+<p>
+	The system should have reasonable ways of dealing with growth.
+</p>
+
+<p>
+	The goal of scalability is to keep performance good even when load increases. To talk about this, we first need ways to describe load and performance quantitatively. Numbers that we use for describing load are called “load parameters”. Examples: requests per second to a web server, ratio of read to writes in a database, number of simultaneously active users, hit rate on a cache. Depending on your needs, you may care more about average load or bottlenecks.
+</p>
+
+<p>
+	Typically, percentiles are better than average because the average (mean) is not what most users experience – instead the median (halfway) is often better. Percentiles: the median user (50th percentile, or p50) and also the outliers (p95, p99, p999). Higher percentiles are known as tail latencies
+</p>
+
+<p>
+	SLA (service level agreements) talk in these terms. For example, a SLA may say: a service is considered up if it has a median response time of 200ms or less and a 99th percentile of under 1s, and is required to be up (per the previously stated parameters) 99.9%
+</p>
+
+<p>
+	<ul><li>Scaling up: upgrade to more powerful machines</li><li>Scaling out: add more of the same machines. </li><ul>
+</p>
+
+<p>
+	Some systems are “elastic” – they can add and remove resources based on changing load.
+</p>
+
+<p>
+	<b>Maintainability</b>: 
+</p>
+
+<p>
+	Many different people work on a system, they should be able to work on it productively.
+</p>
+
+<p>
+	Maintainability is about making life easier for the engineering and operations team. Good abstractions make the system easier to modify and adapt to new use cases. Good operability means having ways to easily visualize the system's health and having effective ways for managing said system health.
+</p>
+
+
+<hr />
+
+
+<h3 className="text-center">Chapter 2: Data Models and Query Languages</h3>
+

@@ -14,12 +14,12 @@ void Main()
 		var input = Console.ReadLine();
 		//Console.Clear();
 
-		if (input == "set:t")
+		if (input == "o") // o = ordered
 		{
 			isOrdered = true;
 			continue;
 		}
-		else if (input == "set:f")
+		else if (input == "u") // u = unordered
 		{
 			isOrdered = false;
 			continue;
