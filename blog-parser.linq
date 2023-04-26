@@ -67,7 +67,7 @@ private string GetFilePath()
 	Console.WriteLine("Enter an input file path (without file name):");
 	var filePath ="";
 	//filePath = Console.ReadLine();
-	filePath = @"C:\Users\rgay\Documents\LINQPad Queries\personal\BlogPosts\"; // FOR TESTING
+	filePath = @"C:\Users\rgay\Documents\LINQPad Queries\personal\blog-parser\BlogPosts\"; // FOR TESTING
 
 	if (filePath[filePath.Length - 1] != '\\')
 		filePath += "\\";

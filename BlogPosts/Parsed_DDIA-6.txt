@@ -1,0 +1,168 @@
+<h3 className="text-center">Chapter 6: Partitioning</h3>
+
+<br />
+
+<p>
+	Chapter 5 discussed having multiple copies of the data across multiple nodes. With large enough datasets, you will need to break data into <b>partitions</b> (a process known as <b>sharding</b>).
+</p>
+
+<p>
+	Each piece of data should appear on only one partition – although there is likely still replication (multiple copies of each partition). The main reason for shading your dataset is scalability as a large dataset can be distributed across many disks and the query load can be distributed across many processors.
+</p>
+
+<p>
+	A node may store more than one partition and each node may be the leader for some partitions and a follower for others.
+</p>
+
+<br />
+
+<div className="text-center">
+	<figure className="figure">
+		<img className="img-fluid" src="/blogAssets/img/2023/replication-and-partitioning.png" alt="Replication and partitioning" />
+		<figcaption className="figure-caption text-center"></ figcaption>
+	</figure>
+</div>
+
+<br />
+
+<p>
+	The goal of partitioning is to spread the load evenly, avoiding hotspots (nodes with disproportionally high loads). This requires choosing a partitioning schema that fits your data. You will likely need to rebalance partitions when nodes are added or removed from the cluster.
+</p>
+
+<p>
+	Two approaches for partitioning:
+</p>
+
+<p>
+	<ul><li><b>Key range partitioning</b>: Keys are sorted and a partition owns all keys from a minimum to a maximum. This is similar to how an encyclopedia is split into separate books by alphabetic range.</li><ul><li>Efficient range quires are possible, but you run the risk of hot spots if the application often access keys that are close together in the sorted order.</li></ul><li><b>Hash partitioning</b>: A hash function is applied to each key and each partition owns a range of hashes.</li><ul><li>This method destroys the ordering of keys, making range quires inefficient but distributing load evenly.</li></ul></ul>
+</p>
+
+<p>
+	Datasets that are not partitioned in a way that avoids hot spots are said to be <b>skewed</b>.
+</p>
+
+<br />
+
+<p>
+	Even if using hashing, it may still not be possible to avoid hot spots. If a given piece of data is quired more often than other data, then this will still result in a hotspot. A common example of this is celebrity profiles on social media applications. The celebrity profile might have millions of followers compared to hundreds or thousands of followers for the average user. When the celerity makes a post, there will now be a large number of writes and reads to the same key. Most data systems are not able to automatically account for hot keys like this, and this sort of load balancing will have to be handled via application code or manual database administration.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b><u>Secondary Indexes</u></b>:
+</p>
+
+<p>
+	Secondary indexes are commonly used to quickly search databases. These present problems in partitioned databases as secondary indexes do not map neatly between partitions. There are two common approaches to secondary indexes in partitioned datasets:
+</p>
+
+<p>
+	<ul><li><b>Document partitioned indexes (local indexes)</b>: the secondary indexes are stored in the same partition as the primary key and value. Only a single partition needs to be updated on write but reads require a <b>scatter/gather</b> approach: check all partitions and gather the results.</li></ul>
+</p>
+
+<br />
+
+<div className="text-center">
+	<figure className="figure">
+		<img className="img-fluid" src="/blogAssets/img/2023/document-partitioning.png" alt="Document partitioning" />
+		<figcaption className="figure-caption text-center"></ figcaption>
+	</figure>
+</div>
+
+<br />
+
+<p>
+	In the above image, each partition has a copy of all of the secondary indexes. This means that when a new car is added with the color: red, only the secondary index on that partition needs to be updated. This makes writes efficient. When reading from the database for red cars, the query will now have to check all partitions for secondary indexes on red cars. This makes writes inefficient.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<ul><li><b>Term-partitioned indexes (global indexes)</b>: Secondary indexes are partitioned separately, using the indexed values. Writes require accessing several partitions but reads can come from a single partition.</li></ul>
+</p>
+
+<br />
+
+<div className="text-center">
+	<figure className="figure">
+		<img className="img-fluid" src="/blogAssets/img/2023/term-partitoning.png" alt="Term partitoning" />
+		<figcaption className="figure-caption text-center"></ figcaption>
+	</figure>
+</div>
+
+<br />
+
+<p>
+	In the above image, secondary indexes are split across partitions: partition 0 owns all of the red and black car secondary indexes, and partition 1 owns secondary indexes on silver and yellow cars. This makes writes more challenging, are you may have a car that is silver colored but that has been assigned to partition 0. After writing to partition 0, the database must now search through partitions until it finds the one that stores the color silver. There may even be additional secondary indexes stored on other partitions. Writes are inefficient on global indexes.
+</p>
+
+<p>
+	This approach does make reads efficient. If searching for red cars, you only need to access partition 0 which stores the red car secondary indexes. You now know which keys the other red cars are paired with an can quickly access the appropriate partitions.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b>Rebalancing Partitions</b>:
+</p>
+
+<p>
+	Over time, changes occur to the database:
+</p>
+
+<p>
+	<ul><li>Query throughput increases, so you add more CPUs to handle the load.</li><li>The dataset size increases, so you add more disks and RAM to store it.</li><li>A machine fails, and other machines need to take over that machine's responsibilities.</li></ul>
+</p>
+
+<p>
+	All of these changes require that data and requests be moved from one node to another. The processes of moving load from one node to another is known as <b>rebalancing</b>.
+</p>
+
+<p>
+	<ul><li><b>Fixed number of partitions</b>: Create many more partitions than there are nodes.</li><ul><li>Example: 10 nodes, 1,000 partitions. This means that if you add a node, it can steal a few partitions from each of the other nodes. You can account for mismatched hardware by giving more partitions to more powerful machines. Only entire partitions are moved between nodes. Typically, the number of partitions does not change, so you should initially create enough partitions that can accommodate growth.</li></ul><li><b>Dynamic partitioning</b>:</li><ul><li>Key range partitioned databases do not work well with a fixed number of partitions. When you create your database, you have to decide where to create key range boundaries. If you get these wrong initially (which you likely will, as you can’t predict what data will be ingested into your data system), then you will have some partitions with high volumes of data and some that might be empty. Dynamic partitioning is often used in key range partitioned databases for this reason.</li><li>Dynamic partitioning works by splitting partitions into two partitions when it grows past a configurable size. Likewise, if it shrinks below a configured threshold, it can be merged with an adjacent partition.</li><li>A downside is that an empty database starts with one partition, meaning that all requests will be served from a single node until the databases grows beyond a certain size (In HBase, the default is 10GB – so this could take a while). To address this, some databases offer <b>pre-splitting</b> where your empty database starts with some initial partitioning. This requires you to have a pretty good knowledge of where to divide you partition key boundaries.</ul></li></ul>Rebalancing can be automatic or manual, with a gradient of options in between. Some databases will suggest partition rebalances, but require administrative approval to proceed. Automatic rebalancing can reduce operational costs but can cause performance degradations as rebalancing is expensive and without user oversight, could be done too frequently or at inopportune times. In general, having a human in the loop for rebalancing can prevent operational surprises.
+</p>
+
+<br />
+
+<br />
+
+<p>
+	<b><u>Request Routing</u></b>:
+</p>
+
+<p>
+	When a client wants to make a request, how does it know which node to connect to? As partitions are rebalanced, data may not live at the same location throughout its lifetime. This is related to a more general problem call <b>service discovery</b>. There are generally three approaches:
+</p>
+
+<p>
+	<ul><li>Allow the client to connect to any node. If that node happens to have the requested data, return that data. If not, forward the request to the appropriate node.</li><li>Send all client requests to a routing tier first, which determines which node to send the request to.</li><li>Require that clients be aware of the partitioning and assignments of nodes. This means that clients will select the correct node on their own.</li></ul>
+</p>
+
+<br />
+
+<div className="text-center">
+	<figure className="figure">
+		<img className="img-fluid" src="/blogAssets/img/2023/partitioning-routing.png" alt="Partitioning routing" />
+		<figcaption className="figure-caption text-center"></ figcaption>
+	</figure>
+</div>
+
+<br />
+
+<p>
+	Most distributed systems rely on a separate coordination service such as ZooKeeper to keep track of cluster metadata.
+</p>
+
+
+<br />
+<hr />
+<br />
+
+
